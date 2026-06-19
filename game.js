@@ -457,6 +457,8 @@ const gunBarrel = new THREE.Mesh(
 gunBarrel.rotation.x = Math.PI / 2;
 gunBarrel.position.set(0.38, 1.08, -0.52);
 gunGroup.add(gunBarrel);
+const gunInitialPosition = gunGroup.position.clone();
+const gunInitialRotation = gunGroup.rotation.clone();
 player.add(gunGroup);
 
 scene.add(player);
@@ -483,6 +485,21 @@ function updateStormVisual() {
   if (!stormMesh) return;
   stormMesh.scale.set(state.stormRadius / 100, state.stormRadius / 100, 1);
   stormMesh.position.set(state.stormCenter.x, 0.5, state.stormCenter.z);
+}
+
+function updateGunReloadAnimation() {
+  if (state.reloading && state.reloadDuration > 0) {
+    const progress = 1 - Math.max(0, state.reloadTimer) / state.reloadDuration;
+    const ease = Math.sin(progress * Math.PI);
+    gunGroup.position.x = gunInitialPosition.x - 0.08 * ease;
+    gunGroup.position.y = gunInitialPosition.y - 0.08 * ease;
+    gunGroup.position.z = gunInitialPosition.z - 0.12 * ease;
+    gunGroup.rotation.x = gunInitialRotation.x + 0.15 * ease;
+    gunGroup.rotation.z = gunInitialRotation.z + 0.6 * ease;
+  } else {
+    gunGroup.position.copy(gunInitialPosition);
+    gunGroup.rotation.copy(gunInitialRotation);
+  }
 }
 
 // ─── Bot AI ────────────────────────────────────────────────────
@@ -1060,6 +1077,7 @@ function updatePlayer(dt) {
 
   player.rotation.y = state.yaw;
   animateHumanWalk(player, moveAmount * speed, performance.now() / 1000);
+  updateGunReloadAnimation();
 
   const camDist = state.isMobile ? 7 : 6;
   const camHeight = 2.8;
