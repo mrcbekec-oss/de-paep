@@ -524,6 +524,7 @@ function createBot(x, z, index) {
     stateTimer: 0,
     moveDir: new THREE.Vector3(),
     fireCooldown: 0,
+    buildCooldown: 0,
     weapon: Math.random() > 0.5 ? 'ar' : 'shotgun',
   };
 }
@@ -841,12 +842,27 @@ function destroyBuilding(build) {
 }
 
 // ─── Bot AI Update ─────────────────────────────────────────────
+function botPlaceCover(bot, targetPosition) {
+  const dir = targetPosition.clone().sub(bot.mesh.position).normalize();
+  const buildPos = bot.mesh.position.clone().add(dir.clone().multiplyScalar(4));
+  buildPos.x += (Math.random() - 0.5) * 1.5;
+  buildPos.z += (Math.random() - 0.5) * 1.5;
+  buildPos.y = getGroundHeight(buildPos.x, buildPos.z);
+  const type = Math.random() < 0.75 ? 'wall' : 'ramp';
+  const rotation = Math.atan2(-dir.x, -dir.z);
+  createBuildPiece(type, buildPos, rotation, 'wood');
+  bot.buildCooldown = 8 + Math.random() * 4;
+  bot.stateTimer = 1.2 + Math.random() * 0.8;
+  bot.state = 'attack';
+}
+
 function updateBots(dt) {
   for (const bot of bots) {
     if (!bot.alive) continue;
 
     bot.stateTimer -= dt;
     bot.fireCooldown -= dt;
+    bot.buildCooldown -= dt;
 
     const distToPlayer = bot.mesh.position.distanceTo(player.position);
     const inStorm = isInStorm(bot.mesh.position);
@@ -865,24 +881,43 @@ function updateBots(dt) {
 
     // Detect player
     if (distToPlayer < 40 && !inStorm) {
-      bot.state = 'attack';
-      bot.target = 'player';
+      if (bot.buildCooldown <= 0 && bot.state !== 'build') {
+        bot.state = 'build';
+        bot.target = 'player';
+        bot.stateTimer = 1.5 + Math.random() * 0.8;
+      } else if (bot.state !== 'attack' && bot.state !== 'build') {
+        bot.state = 'attack';
+        bot.target = 'player';
+      }
     }
 
-    if (bot.state === 'attack' && bot.target === 'player') {
+    if (bot.state === 'build' && bot.target === 'player') {
+      const dir = player.position.clone().sub(bot.mesh.position).normalize();
+      const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar((Math.random() - 0.5) * 0.7);
+      const moveDir = dir.clone().multiplyScalar(2.4).add(side).normalize();
+      bot.mesh.position.add(moveDir.multiplyScalar(dt));
+      clampBotToGround(bot);
+      resolveHorizontalCollision(bot.mesh.position);
+      bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
+
+      if (bot.stateTimer <= 0) {
+        botPlaceCover(bot, player.position);
+      }
+    } else if (bot.state === 'attack' && bot.target === 'player') {
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
       bot.mesh.position.add(dir.multiplyScalar(4 * dt));
       clampBotToGround(bot);
       resolveHorizontalCollision(bot.mesh.position);
       bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
 
-      if (distToPlayer < 30 && bot.fireCooldown <= 0) {
+      if (distToPlayer < 30 && bot.fireCooldown <= 0 && bot.stateTimer <= 0) {
         const from = bot.mesh.position.clone();
         from.y += 1.4;
         const targetPos = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
         const w = WEAPONS[bot.weapon === 'ar' ? 'ar' : 'shotgun'];
         const shootDir = getBotAimDirection(bot, targetPos, w.spread);
         bot.fireCooldown = w.fireRate;
+        bot.stateTimer = 0.2;
         const pellets = w.pellets || 1;
         for (let i = 0; i < pellets; i++) {
           shoot(from, shootDir, w.damage * 0.6, bot.name, w.spread);
