@@ -2,11 +2,14 @@ import * as THREE from 'three';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAP_SIZE = 200;
-const PLAYER_HEIGHT = 1.8;
-const PLAYER_SPEED = 12;
-const SPRINT_MULT = 1.6;
-const JUMP_FORCE = 10;
-const GRAVITY = 25;
+const PLAYER_HEIGHT = 1.75;
+const PLAYER_SPEED = 5.5;
+const SPRINT_MULT = 1.35;
+const JUMP_FORCE = 8;
+const GRAVITY = 28;
+const GROUND_SKIN = 0.02;
+const PLAYER_RADIUS = 0.45;
+const PLAYER_BODY_HEIGHT = 1.75;
 const BOT_COUNT = 15;
 const STORM_PHASES = [
   { wait: 60, shrink: 30, radius: 80 },
@@ -59,6 +62,9 @@ const state = {
   buildType: 'wall',
   buildPreview: null,
   damageFlash: 0,
+  isMobile: false,
+  joystick: { active: false, dx: 0, dy: 0, id: null },
+  lookTouch: { active: false, lastX: 0, lastY: 0, id: null },
 };
 
 // ─── Three.js Setup ────────────────────────────────────────────
@@ -135,6 +141,165 @@ function getTerrainHeight(x, z) {
   return noise2D(x * 0.02, z * 0.02) * 4 + noise2D(x * 0.05, z * 0.05) * 2;
 }
 
+function getGroundHeight(x, z) {
+  let height = getTerrainHeight(x, z);
+  const footRadius = 0.35;
+
+  for (const c of colliders) {
+    if (c.type === 'box' &&
+        x >= c.x - c.hw - footRadius && x <= c.x + c.hw + footRadius &&
+        z >= c.z - c.hd - footRadius && z <= c.z + c.hd + footRadius) {
+      if (c.maxY > height) height = c.maxY;
+    }
+  }
+
+  for (const build of buildings) {
+    const bp = build.mesh.position;
+    const hw = 2;
+    if (x >= bp.x - hw && x <= bp.x + hw && z >= bp.z - hw && z <= bp.z + hw) {
+      const topY = bp.y + (build.type === 'wall' ? 3 : 3);
+      if (topY > height) height = topY;
+    }
+  }
+
+  return height + GROUND_SKIN;
+}
+
+const _raycaster = new THREE.Raycaster();
+const _screenCenter = new THREE.Vector2(0, 0);
+
+function getAimDirection() {
+  _raycaster.setFromCamera(_screenCenter, camera);
+  return _raycaster.ray.direction.clone().normalize();
+}
+
+function getAimYaw() {
+  const dir = getAimDirection();
+  return Math.atan2(-dir.x, -dir.z);
+}
+
+function resolveHorizontalCollision(pos) {
+  const py = pos.y;
+
+  for (const c of colliders) {
+    if (py + 0.3 >= c.maxY) continue;
+    if (py + PLAYER_BODY_HEIGHT < c.minY + 0.3) continue;
+
+    if (c.type === 'cylinder' || c.type === 'sphere') {
+      const minDist = c.radius + PLAYER_RADIUS;
+      const dx = pos.x - c.x;
+      const dz = pos.z - c.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < minDist * minDist) {
+        if (distSq < 0.0001) {
+          pos.x += minDist;
+        } else {
+          const dist = Math.sqrt(distSq);
+          const push = (minDist - dist) / dist;
+          pos.x += dx * push;
+          pos.z += dz * push;
+        }
+      }
+    } else if (c.type === 'box') {
+      const closestX = Math.max(c.x - c.hw, Math.min(pos.x, c.x + c.hw));
+      const closestZ = Math.max(c.z - c.hd, Math.min(pos.z, c.z + c.hd));
+      const dx = pos.x - closestX;
+      const dz = pos.z - closestZ;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < PLAYER_RADIUS * PLAYER_RADIUS) {
+        if (distSq < 0.0001) {
+          const ox = pos.x - c.x;
+          const oz = pos.z - c.z;
+          if (Math.abs(ox) > Math.abs(oz)) {
+            pos.x += ox > 0 ? PLAYER_RADIUS : -PLAYER_RADIUS;
+          } else {
+            pos.z += oz > 0 ? PLAYER_RADIUS : -PLAYER_RADIUS;
+          }
+        } else {
+          const dist = Math.sqrt(distSq);
+          const push = (PLAYER_RADIUS - dist) / dist;
+          pos.x += dx * push;
+          pos.z += dz * push;
+        }
+      }
+    }
+  }
+}
+
+function createHumanoid(shirtColor, pantsColor = 0x2a2a4a, skinColor = 0xe8b896) {
+  const group = new THREE.Group();
+  const skinMat = new THREE.MeshLambertMaterial({ color: skinColor });
+  const shirtMat = new THREE.MeshLambertMaterial({ color: shirtColor });
+  const pantsMat = new THREE.MeshLambertMaterial({ color: pantsColor });
+  const shoeMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const hairMat = new THREE.MeshLambertMaterial({ color: 0x3d2314 });
+
+  const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.8, 6), pantsMat);
+  leftLeg.position.set(-0.16, 0.4, 0);
+  leftLeg.castShadow = true;
+  group.add(leftLeg);
+
+  const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.8, 6), pantsMat);
+  rightLeg.position.set(0.16, 0.4, 0);
+  rightLeg.castShadow = true;
+  group.add(rightLeg);
+
+  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.32), shoeMat);
+  leftShoe.position.set(-0.16, 0.05, 0.04);
+  group.add(leftShoe);
+
+  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.32), shoeMat);
+  rightShoe.position.set(0.16, 0.05, 0.04);
+  group.add(rightShoe);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.65, 0.28), shirtMat);
+  torso.position.y = 1.05;
+  torso.castShadow = true;
+  group.add(torso);
+
+  const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.6, 6), shirtMat);
+  leftArm.position.set(-0.34, 1.0, 0);
+  leftArm.rotation.z = 0.2;
+  leftArm.castShadow = true;
+  group.add(leftArm);
+
+  const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.6, 6), shirtMat);
+  rightArm.position.set(0.34, 1.0, 0);
+  rightArm.rotation.z = -0.2;
+  rightArm.castShadow = true;
+  group.add(rightArm);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.15, 6), skinMat);
+  neck.position.y = 1.45;
+  group.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), skinMat);
+  head.position.y = 1.65;
+  head.castShadow = true;
+  group.add(head);
+
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.27, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+  hair.position.y = 1.72;
+  hair.rotation.x = -0.1;
+  group.add(hair);
+
+  group.userData.leftLeg = leftLeg;
+  group.userData.rightLeg = rightLeg;
+  group.userData.leftArm = leftArm;
+  group.userData.rightArm = rightArm;
+
+  return group;
+}
+
+function animateHumanWalk(human, speed, time) {
+  if (!human.userData.leftLeg) return;
+  const swing = Math.sin(time * 10) * 0.4 * Math.min(speed / 4, 1);
+  human.userData.leftLeg.rotation.x = swing;
+  human.userData.rightLeg.rotation.x = -swing;
+  human.userData.leftArm.rotation.x = -swing * 0.6;
+  human.userData.rightArm.rotation.x = swing * 0.6;
+}
+
 function createTree(x, z) {
   const group = new THREE.Group();
   const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, 3, 6);
@@ -154,7 +319,7 @@ function createTree(x, z) {
   const y = getTerrainHeight(x, z);
   group.position.set(x, y, z);
   scene.add(group);
-  colliders.push({ type: 'cylinder', x, z, radius: 0.5, minY: y, maxY: y + 6 });
+  colliders.push({ type: 'cylinder', x, z, radius: 0.55, minY: y, maxY: y + 6 });
 }
 
 function createRock(x, z) {
@@ -165,7 +330,7 @@ function createRock(x, z) {
   rock.position.set(x, y + 0.5, z);
   rock.castShadow = true;
   scene.add(rock);
-  colliders.push({ type: 'sphere', x, z, radius: 1, minY: y, maxY: y + 2 });
+  colliders.push({ type: 'sphere', x, z, radius: 1.2, minY: y, maxY: y + 2 });
 }
 
 function createBuilding(x, z, w, d, h) {
@@ -255,30 +420,23 @@ function spawnLoot(x, z) {
 }
 
 // ─── Player ────────────────────────────────────────────────────
-const player = new THREE.Group();
-const playerBody = new THREE.Mesh(
-  new THREE.CapsuleGeometry(0.4, 1.0, 4, 8),
-  new THREE.MeshLambertMaterial({ color: 0x3b82f6 })
-);
-playerBody.position.y = 0.9;
-playerBody.castShadow = true;
-player.add(playerBody);
-
-const playerHead = new THREE.Mesh(
-  new THREE.SphereGeometry(0.35, 8, 8),
-  new THREE.MeshLambertMaterial({ color: 0xffcc99 })
-);
-playerHead.position.y = 1.8;
-playerHead.castShadow = true;
-player.add(playerHead);
+const player = createHumanoid(0x3b82f6, 0x1e3a5f);
+player.userData.isPlayer = true;
 
 const gunGroup = new THREE.Group();
 const gunBody = new THREE.Mesh(
-  new THREE.BoxGeometry(0.08, 0.08, 0.5),
-  new THREE.MeshLambertMaterial({ color: 0x333333 })
+  new THREE.BoxGeometry(0.06, 0.1, 0.45),
+  new THREE.MeshLambertMaterial({ color: 0x222222 })
 );
-gunBody.position.set(0.3, 1.3, -0.3);
+gunBody.position.set(0.38, 1.05, -0.25);
 gunGroup.add(gunBody);
+const gunBarrel = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.025, 0.025, 0.3, 6),
+  new THREE.MeshLambertMaterial({ color: 0x111111 })
+);
+gunBarrel.rotation.x = Math.PI / 2;
+gunBarrel.position.set(0.38, 1.08, -0.52);
+gunGroup.add(gunBarrel);
 player.add(gunGroup);
 
 scene.add(player);
@@ -311,25 +469,10 @@ function updateStormVisual() {
 const BOT_NAMES = ['Shadow', 'Blaze', 'Viper', 'Ghost', 'Raven', 'Storm', 'Fury', 'Ace', 'Nova', 'Titan', 'Wolf', 'Hawk', 'Bolt', 'Rex', 'Zara'];
 
 function createBot(x, z, index) {
-  const group = new THREE.Group();
-  const colors = [0xff4444, 0xff8844, 0xff44aa, 0x44ff44, 0x44aaff, 0xffaa00];
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.4, 1.0, 4, 8),
-    new THREE.MeshLambertMaterial({ color: colors[index % colors.length] })
-  );
-  body.position.y = 0.9;
-  body.castShadow = true;
-  group.add(body);
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.35, 8, 8),
-    new THREE.MeshLambertMaterial({ color: 0xffcc99 })
-  );
-  head.position.y = 1.8;
-  head.castShadow = true;
-  group.add(head);
-
-  const y = getTerrainHeight(x, z);
+  const colors = [0xff4444, 0xff8844, 0xff44aa, 0x44aa44, 0x44aaff, 0xffaa00];
+  const pants = [0x4a2020, 0x4a3020, 0x4a2040, 0x204a20, 0x20304a, 0x4a4020];
+  const group = createHumanoid(colors[index % colors.length], pants[index % pants.length]);
+  const y = getGroundHeight(x, z);
   group.position.set(x, y, z);
   scene.add(group);
 
@@ -412,13 +555,10 @@ function createBuildPiece(type, position, rotation, material) {
 }
 
 function getBuildPreviewPosition() {
-  const dir = new THREE.Vector3(
-    -Math.sin(state.yaw),
-    0,
-    -Math.cos(state.yaw)
-  );
-  const pos = player.position.clone().add(dir.multiplyScalar(5));
-  pos.y = getTerrainHeight(pos.x, pos.z);
+  const aimDir = getAimDirection();
+  const flat = new THREE.Vector3(aimDir.x, 0, aimDir.z).normalize();
+  const pos = player.position.clone().add(flat.multiplyScalar(5));
+  pos.y = getGroundHeight(pos.x, pos.z);
   const gridSize = 4;
   pos.x = Math.round(pos.x / gridSize) * gridSize;
   pos.z = Math.round(pos.z / gridSize) * gridSize;
@@ -452,7 +592,7 @@ function updateBuildPreview() {
   state.buildPreview.position.x = pos.x;
   state.buildPreview.position.z = pos.z;
   state.buildPreview.position.y = pos.y + (type === 'wall' ? 1.5 : 1.5);
-  state.buildPreview.rotation.y = state.yaw;
+  state.buildPreview.rotation.y = getAimYaw();
 }
 
 function placeBuild() {
@@ -462,7 +602,7 @@ function placeBuild() {
 
   state.materials[state.activeMat] -= cost;
   const pos = getBuildPreviewPosition();
-  createBuildPiece(type, pos, state.yaw, state.activeMat);
+  createBuildPiece(type, pos, getAimYaw(), state.activeMat);
   updateHUD();
 }
 
@@ -509,12 +649,8 @@ function playerShoot() {
   updateHUD();
 
   const from = player.position.clone();
-  from.y += 1.4;
-  const dir = new THREE.Vector3(
-    -Math.sin(state.yaw) * Math.cos(state.pitch),
-    Math.sin(state.pitch),
-    -Math.cos(state.yaw) * Math.cos(state.pitch)
-  );
+  from.y += 1.35;
+  const dir = getAimDirection();
 
   const pellets = w.pellets || 1;
   for (let i = 0; i < pellets; i++) {
@@ -686,8 +822,8 @@ function updateBots(dt) {
 
     if (bot.state === 'attack' && bot.target === 'player') {
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
-      bot.mesh.position.add(dir.multiplyScalar(6 * dt));
-      bot.mesh.position.y = getTerrainHeight(bot.mesh.position.x, bot.mesh.position.z);
+      bot.mesh.position.add(dir.multiplyScalar(4 * dt));
+      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z);
       bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
 
       if (distToPlayer < 30 && bot.fireCooldown <= 0) {
@@ -718,8 +854,8 @@ function updateBots(dt) {
           bot.moveDir = state.stormCenter.clone().sub(bot.mesh.position).normalize();
         }
       }
-      bot.mesh.position.add(bot.moveDir.clone().multiplyScalar(4 * dt));
-      bot.mesh.position.y = getTerrainHeight(bot.mesh.position.x, bot.mesh.position.z);
+      bot.mesh.position.add(bot.moveDir.clone().multiplyScalar(3 * dt));
+      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z);
     }
 
     // Bot vs bot combat
@@ -822,51 +958,83 @@ function collectLoot(loot) {
 
 // ─── Player Movement ───────────────────────────────────────────
 function updatePlayer(dt) {
-  const speed = PLAYER_SPEED * (state.keys['shift'] ? SPRINT_MULT : 1);
-  const moveDir = new THREE.Vector3();
+  const sprinting = state.keys['shift'] || state.joystick.dy < -0.7;
+  const speed = PLAYER_SPEED * (sprinting ? SPRINT_MULT : 1);
 
-  if (state.keys['w']) moveDir.z -= 1;
-  if (state.keys['s']) moveDir.z += 1;
-  if (state.keys['a']) moveDir.x -= 1;
-  if (state.keys['d']) moveDir.x += 1;
+  const forward = new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
+  const right = new THREE.Vector3(Math.cos(state.yaw), 0, -Math.sin(state.yaw));
+  const move = new THREE.Vector3();
 
-  if (moveDir.length() > 0) {
-    moveDir.normalize();
-    const sin = Math.sin(state.yaw);
-    const cos = Math.cos(state.yaw);
-    const dx = moveDir.x * cos - moveDir.z * sin;
-    const dz = moveDir.x * sin + moveDir.z * cos;
-    player.position.x += dx * speed * dt;
-    player.position.z += dz * speed * dt;
+  if (state.keys['w']) move.add(forward);
+  if (state.keys['s']) move.sub(forward);
+  if (state.keys['a']) move.sub(right);
+  if (state.keys['d']) move.add(right);
+
+  if (state.joystick.active) {
+    move.add(forward.clone().multiplyScalar(-state.joystick.dy));
+    move.add(right.clone().multiplyScalar(state.joystick.dx));
   }
 
-  // Gravity
-  state.velocity.y -= GRAVITY * dt;
-  player.position.y += state.velocity.y * dt;
+  let moveAmount = 0;
+  if (move.length() > 0.01) {
+    moveAmount = Math.min(move.length(), 1);
+    move.normalize();
+    const dx = move.x * speed * moveAmount * dt;
+    const dz = move.z * speed * moveAmount * dt;
 
-  const groundY = getTerrainHeight(player.position.x, player.position.z);
-  if (player.position.y <= groundY) {
-    player.position.y = groundY;
+    player.position.x += dx;
+    resolveHorizontalCollision(player.position);
+    player.position.z += dz;
+    resolveHorizontalCollision(player.position);
+  }
+
+  // Yer çekimi — alt adımlarla tünelleme önlenir
+  const steps = 3;
+  const subDt = dt / steps;
+  for (let i = 0; i < steps; i++) {
+    state.velocity.y -= GRAVITY * subDt;
+    player.position.y += state.velocity.y * subDt;
+
+    const groundY = getGroundHeight(player.position.x, player.position.z);
+    if (player.position.y <= groundY) {
+      player.position.y = groundY;
+      if (state.velocity.y < 0) state.velocity.y = 0;
+      state.onGround = true;
+    } else {
+      state.onGround = false;
+    }
+  }
+
+  // Zemine gömülme kurtarma
+  const finalGround = getGroundHeight(player.position.x, player.position.z);
+  if (player.position.y < finalGround) {
+    player.position.y = finalGround;
     state.velocity.y = 0;
     state.onGround = true;
-  } else {
-    state.onGround = false;
   }
 
-  if (state.keys[' '] && state.onGround) {
+  const wantsJump = state.keys[' '] || state.keys['jump'];
+  if (wantsJump && state.onGround) {
     state.velocity.y = JUMP_FORCE;
     state.onGround = false;
+    state.keys['jump'] = false;
   }
 
   player.rotation.y = state.yaw;
+  animateHumanWalk(player, moveAmount * speed, performance.now() / 1000);
 
-  // Camera (third person)
-  const camDist = 6;
-  const camHeight = 3;
+  const camDist = state.isMobile ? 7 : 6;
+  const camHeight = 2.8;
   camera.position.x = player.position.x + Math.sin(state.yaw) * camDist * Math.cos(state.pitch * 0.5);
   camera.position.y = player.position.y + camHeight + Math.sin(state.pitch) * camDist * 0.5;
   camera.position.z = player.position.z + Math.cos(state.yaw) * camDist * Math.cos(state.pitch * 0.5);
-  camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
+
+  const lookDist = 20;
+  camera.lookAt(
+    player.position.x - Math.sin(state.yaw) * Math.cos(state.pitch) * lookDist,
+    player.position.y + 1.4 + Math.sin(state.pitch) * lookDist,
+    player.position.z - Math.cos(state.yaw) * Math.cos(state.pitch) * lookDist
+  );
 
   // Collect nearby loot with E
   if (state.keys['e']) {
@@ -958,8 +1126,9 @@ function startGame() {
   state.stormRadius = 100;
   state.stormShrinking = false;
   state.ammo = { ar: { current: 30, reserve: 90 }, shotgun: { current: 6, reserve: 18 } };
+  state.velocity.set(0, 0, 0);
 
-  player.position.set(0, getTerrainHeight(0, 0), 0);
+  player.position.set(0, getGroundHeight(0, 0), 0);
   state.yaw = 0;
   state.pitch = 0;
 
@@ -967,7 +1136,11 @@ function startGame() {
   document.getElementById('game-over').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
 
-  renderer.domElement.requestPointerLock();
+  if (state.isMobile) {
+    document.getElementById('mobile-controls').classList.remove('hidden');
+  } else {
+    renderer.domElement.requestPointerLock();
+  }
   updateHUD();
 }
 
@@ -975,6 +1148,7 @@ function endGame(won) {
   state.playing = false;
   document.exitPointerLock();
   document.getElementById('hud').classList.add('hidden');
+  document.getElementById('mobile-controls').classList.add('hidden');
   document.getElementById('game-over').classList.remove('hidden');
   document.getElementById('result-title').textContent = won ? '#1 VICTORY ROYALE!' : 'ELENDİN!';
   document.getElementById('result-title').style.background = won
@@ -1053,6 +1227,150 @@ document.addEventListener('mouseup', (e) => {
 document.getElementById('play-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', resetGame);
 
+// ─── Mobil Kontroller ──────────────────────────────────────────
+function detectMobile() {
+  state.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768;
+  if (state.isMobile) document.body.classList.add('mobile');
+}
+
+const joystickArea = document.getElementById('joystick-area');
+const joystickStick = document.getElementById('joystick-stick');
+const JOY_RADIUS = 45;
+
+function handleJoystickStart(e) {
+  if (!state.playing) return;
+  e.preventDefault();
+  const touch = e.changedTouches ? e.changedTouches[0] : e;
+  state.joystick.active = true;
+  state.joystick.id = touch.identifier ?? 'mouse';
+  updateJoystick(touch);
+}
+
+function handleJoystickMove(e) {
+  if (!state.joystick.active) return;
+  e.preventDefault();
+  const touches = e.changedTouches || [e];
+  for (const touch of touches) {
+    if ((touch.identifier ?? 'mouse') === state.joystick.id) {
+      updateJoystick(touch);
+      break;
+    }
+  }
+}
+
+function updateJoystick(touch) {
+  const rect = joystickArea.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  let dx = touch.clientX - cx;
+  let dy = touch.clientY - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist > JOY_RADIUS) {
+    dx = (dx / dist) * JOY_RADIUS;
+    dy = (dy / dist) * JOY_RADIUS;
+  }
+  joystickStick.style.transform = `translate(${dx}px, ${dy}px)`;
+  state.joystick.dx = dx / JOY_RADIUS;
+  state.joystick.dy = dy / JOY_RADIUS;
+}
+
+function handleJoystickEnd(e) {
+  const touches = e.changedTouches || [e];
+  for (const touch of touches) {
+    if ((touch.identifier ?? 'mouse') === state.joystick.id) {
+      state.joystick.active = false;
+      state.joystick.dx = 0;
+      state.joystick.dy = 0;
+      state.joystick.id = null;
+      joystickStick.style.transform = 'translate(0, 0)';
+    }
+  }
+}
+
+joystickArea.addEventListener('touchstart', handleJoystickStart, { passive: false });
+joystickArea.addEventListener('touchmove', handleJoystickMove, { passive: false });
+joystickArea.addEventListener('touchend', handleJoystickEnd);
+joystickArea.addEventListener('touchcancel', handleJoystickEnd);
+
+const lookArea = document.getElementById('look-area');
+
+lookArea.addEventListener('touchstart', (e) => {
+  if (!state.playing) return;
+  const touch = e.changedTouches[0];
+  state.lookTouch.active = true;
+  state.lookTouch.id = touch.identifier;
+  state.lookTouch.lastX = touch.clientX;
+  state.lookTouch.lastY = touch.clientY;
+}, { passive: true });
+
+lookArea.addEventListener('touchmove', (e) => {
+  if (!state.lookTouch.active) return;
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === state.lookTouch.id) {
+      const dx = touch.clientX - state.lookTouch.lastX;
+      const dy = touch.clientY - state.lookTouch.lastY;
+      state.yaw -= dx * 0.004;
+      state.pitch -= dy * 0.004;
+      state.pitch = Math.max(-1.2, Math.min(1.2, state.pitch));
+      state.lookTouch.lastX = touch.clientX;
+      state.lookTouch.lastY = touch.clientY;
+      break;
+    }
+  }
+}, { passive: false });
+
+lookArea.addEventListener('touchend', (e) => {
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === state.lookTouch.id) {
+      state.lookTouch.active = false;
+    }
+  }
+});
+
+document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  state.keys['jump'] = true;
+});
+document.getElementById('btn-jump').addEventListener('touchend', () => {
+  state.keys['jump'] = false;
+});
+
+document.getElementById('btn-fire').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  state.mouseDown = true;
+  if (state.playing) {
+    const w = WEAPONS[state.hotbarSlot === 0 ? 'ar' : 'shotgun'];
+    if (!w || !w.auto) playerShoot();
+    else if (state.hotbarSlot >= 2) playerShoot();
+  }
+});
+document.getElementById('btn-fire').addEventListener('touchend', () => {
+  state.mouseDown = false;
+});
+
+document.getElementById('btn-reload').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  reload();
+});
+
+document.getElementById('btn-build').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const mats = ['wood', 'stone', 'metal'];
+  const idx = mats.indexOf(state.activeMat);
+  state.activeMat = mats[(idx + 1) % mats.length];
+  updateHUD();
+});
+
+document.querySelectorAll('.mob-slot').forEach(btn => {
+  btn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    state.hotbarSlot = parseInt(btn.dataset.slot);
+    document.querySelectorAll('.mob-slot').forEach(b => b.classList.toggle('active', b === btn));
+    updateHUD();
+  });
+});
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -1080,11 +1398,12 @@ function gameLoop(time) {
 
 // ─── Init ──────────────────────────────────────────────────────
 async function init() {
+  detectMobile();
   generateWorld();
   createStormVisual();
   spawnBots();
 
-  player.position.set(0, getTerrainHeight(0, 0), 0);
+  player.position.set(0, getGroundHeight(0, 0), 0);
   camera.position.set(0, 5, 10);
   camera.lookAt(0, 1, 0);
 

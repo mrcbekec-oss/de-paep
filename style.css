@@ -177,15 +177,48 @@ button:hover {
 }
 
 #crosshair {
-  position: absolute;
+  position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: white;
-  font-size: 24px;
-  font-weight: bold;
-  text-shadow: 0 0 4px rgba(0,0,0,0.8);
-  opacity: 0.8;
+  width: 22px;
+  height: 22px;
+  z-index: 160;
+  pointer-events: none;
+}
+
+.ch-line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+}
+
+.ch-h {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.ch-v {
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.ch-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
 }
 
 #bottom-hud {
@@ -364,4 +397,141 @@ button:hover {
 .build-preview {
   position: fixed;
   pointer-events: none;
+}
+
+.mobile-hint {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: #888;
+  text-align: center;
+}
+
+/* Mobil Kontroller */
+#mobile-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+
+#mobile-controls:not(.hidden) {
+  display: block;
+}
+
+#joystick-area {
+  position: absolute;
+  left: 20px;
+  bottom: 120px;
+  width: 130px;
+  height: 130px;
+  pointer-events: auto;
+}
+
+#joystick-base {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+#joystick-stick {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 50px;
+  height: 50px;
+  margin: -25px 0 0 -25px;
+  border-radius: 50%;
+  background: rgba(255, 215, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  transition: transform 0.05s;
+}
+
+#look-area {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 55%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+#mobile-buttons {
+  position: absolute;
+  right: 20px;
+  bottom: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.mob-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-size: 1.3rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mob-btn:active {
+  background: rgba(255, 215, 0, 0.4);
+  transform: scale(0.95);
+}
+
+#mobile-hotbar {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.mob-slot {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  color: white;
+  font-weight: bold;
+  font-size: 1rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mob-slot.active {
+  border-color: #ffd700;
+  background: rgba(255, 215, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .menu-box {
+    padding: 24px 28px;
+    margin: 16px;
+  }
+
+  .menu-box h1 {
+    font-size: 1.8rem;
+  }
+
+  #health-bar, #shield-bar {
+    width: 260px;
+  }
+
+  .slot {
+    width: 56px;
+    height: 56px;
+  }
+
+  #hotbar {
+    gap: 4px;
+  }
 }
