@@ -647,6 +647,16 @@ function shoot(from, direction, damage, owner, spread = 0) {
   spawnParticle(from, 0xffaa00, 0.15, 0.1);
 }
 
+function getBotAimDirection(bot, targetPosition, baseSpread = 0.05) {
+  const dir = targetPosition.clone().sub(bot.mesh.position).normalize();
+  const dist = bot.mesh.position.distanceTo(targetPosition);
+  const spread = baseSpread + Math.min(dist * 0.008, 0.2);
+  dir.x += (Math.random() - 0.5) * spread;
+  dir.y += (Math.random() - 0.5) * spread;
+  dir.z += (Math.random() - 0.5) * spread;
+  return dir.normalize();
+}
+
 function playerShoot() {
   if (state.reloading || state.fireCooldown > 0) return;
   if (state.hotbarSlot >= 2) {
@@ -849,8 +859,9 @@ function updateBots(dt) {
       if (distToPlayer < 30 && bot.fireCooldown <= 0) {
         const from = bot.mesh.position.clone();
         from.y += 1.4;
-        const shootDir = player.position.clone().sub(from).normalize();
+        const targetPos = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
         const w = WEAPONS[bot.weapon === 'ar' ? 'ar' : 'shotgun'];
+        const shootDir = getBotAimDirection(bot, targetPos, w.spread);
         bot.fireCooldown = w.fireRate;
         const pellets = w.pellets || 1;
         for (let i = 0; i < pellets; i++) {
@@ -886,8 +897,9 @@ function updateBots(dt) {
       if (d < 25 && Math.random() < 0.01) {
         const from = bot.mesh.position.clone();
         from.y += 1.4;
-        const dir = other.mesh.position.clone().sub(from).normalize();
-        shoot(from, dir, 15, bot.name, 0.05);
+        const targetPos = other.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+        const shootDir = getBotAimDirection(bot, targetPos, 0.08);
+        shoot(from, shootDir, 15, bot.name, 0.05);
         if (Math.random() < 0.3) {
           damageBot(other, 20 + Math.random() * 30);
           if (!other.alive) {
