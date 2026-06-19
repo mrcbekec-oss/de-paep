@@ -168,6 +168,22 @@ function getGroundHeight(x, z) {
   return height + GROUND_SKIN;
 }
 
+function clampPlayerToGround() {
+  const groundY = getGroundHeight(player.position.x, player.position.z);
+  if (player.position.y < groundY) {
+    player.position.y = groundY;
+    state.velocity.y = 0;
+    state.onGround = true;
+  }
+}
+
+function clampBotToGround(bot) {
+  const groundY = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z);
+  if (bot.mesh.position.y < groundY) {
+    bot.mesh.position.y = groundY;
+  }
+}
+
 const _raycaster = new THREE.Raycaster();
 const _screenCenter = new THREE.Vector2(0, 0);
 
@@ -826,7 +842,7 @@ function updateBots(dt) {
     if (bot.state === 'attack' && bot.target === 'player') {
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
       bot.mesh.position.add(dir.multiplyScalar(4 * dt));
-      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z) + GROUND_SKIN;
+      clampBotToGround(bot);
       resolveHorizontalCollision(bot.mesh.position);
       bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
 
@@ -859,7 +875,7 @@ function updateBots(dt) {
         }
       }
       bot.mesh.position.add(bot.moveDir.clone().multiplyScalar(3 * dt));
-      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z) + GROUND_SKIN;
+      clampBotToGround(bot);
       resolveHorizontalCollision(bot.mesh.position);
     }
 
@@ -992,12 +1008,7 @@ function updatePlayer(dt) {
     player.position.z += dz;
     resolveHorizontalCollision(player.position);
 
-    const groundY = getGroundHeight(player.position.x, player.position.z);
-    if (player.position.y < groundY) {
-      player.position.y = groundY + GROUND_SKIN;
-      state.velocity.y = 0;
-      state.onGround = true;
-    }
+    clampPlayerToGround();
   }
 
   // Yer çekimi — alt adımlarla tünelleme önlenir
