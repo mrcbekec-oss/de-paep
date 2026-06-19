@@ -22,8 +22,8 @@ const STORM_PHASES = [
 ];
 
 const WEAPONS = {
-  ar: { name: 'AR', damage: 22, fireRate: 0.1, magSize: 30, reserve: 90, range: 120, spread: 0.02, auto: true },
-  shotgun: { name: 'Pompalı', damage: 12, pellets: 8, fireRate: 0.8, magSize: 6, reserve: 18, range: 25, spread: 0.15, auto: false },
+  ar: { name: 'AR', damage: 22, fireRate: 0.1, magSize: 30, reserve: 90, range: 120, spread: 0.02, auto: true, reloadTime: 1.5 },
+  shotgun: { name: 'Pompalı', damage: 12, pellets: 8, fireRate: 0.8, magSize: 6, reserve: 18, range: 25, spread: 0.15, auto: false, reloadTime: 2.2 },
 };
 
 const BUILD_COST = { wall: 10, ramp: 10 };
@@ -44,6 +44,7 @@ const state = {
   ammo: { ar: { current: 30, reserve: 90 }, shotgun: { current: 6, reserve: 18 } },
   reloading: false,
   reloadTimer: 0,
+  reloadDuration: 0,
   fireCooldown: 0,
   stormPhase: 0,
   stormTimer: 0,
@@ -696,7 +697,9 @@ function reload() {
   const ammo = state.ammo[weapon];
   if (ammo.current >= w.magSize || ammo.reserve <= 0 || state.reloading) return;
   state.reloading = true;
-  state.reloadTimer = 1.5;
+  state.reloadDuration = w.reloadTime;
+  state.reloadTimer = w.reloadTime;
+  updateHUD();
 }
 
 function updateBullets(dt) {
@@ -1094,6 +1097,8 @@ function updatePlayer(dt) {
       ammo.reserve -= available;
       state.reloading = false;
       updateHUD();
+    } else {
+      updateHUD();
     }
   }
 
@@ -1129,6 +1134,16 @@ function updateHUD() {
   const ammo = state.ammo[weapon];
   document.getElementById('ammo-current').textContent = ammo.current;
   document.getElementById('ammo-reserve').textContent = ammo.reserve;
+
+  if (state.reloading) {
+    const reloadBar = document.getElementById('reload-bar');
+    const reloadContainer = document.getElementById('reload-container');
+    const percent = Math.max(0, Math.min(100, 100 * (1 - state.reloadTimer / state.reloadDuration)));
+    reloadBar.style.width = percent + '%';
+    reloadContainer.classList.remove('hidden');
+  } else {
+    document.getElementById('reload-container').classList.add('hidden');
+  }
 
   document.querySelectorAll('.slot').forEach((el, i) => {
     el.classList.toggle('active', i === state.hotbarSlot);
