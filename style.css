@@ -462,10 +462,10 @@ button:hover {
 
 #joystick-area {
   position: absolute;
-  left: 20px;
-  bottom: 120px;
-  width: 130px;
-  height: 130px;
+  left: 16px;
+  bottom: 110px;
+  width: 150px;
+  height: 150px;
   pointer-events: auto;
 }
 
@@ -501,15 +501,17 @@ button:hover {
 
 #mobile-buttons {
   position: absolute;
-  right: 20px;
-  bottom: 130px;
+  right: 16px;
+  bottom: 110px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   pointer-events: auto;
 }
 
 .mob-btn {
+  width: 68px;
+  height: 68px;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -528,18 +530,18 @@ button:hover {
 
 #mobile-hotbar {
   position: absolute;
-  bottom: 20px;
+  bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 8px;
+  gap: 10px;
   pointer-events: auto;
 }
 
 .mob-slot {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
   background: rgba(0, 0, 0, 0.6);
   border: 2px solid rgba(255, 255, 255, 0.25);
   color: white;

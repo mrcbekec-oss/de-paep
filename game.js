@@ -1303,7 +1303,7 @@ function detectMobile() {
 
 const joystickArea = document.getElementById('joystick-area');
 const joystickStick = document.getElementById('joystick-stick');
-const JOY_RADIUS = 45;
+const JOY_RADIUS = 80;
 
 function handleJoystickStart(e) {
   if (!state.playing) return;
@@ -1378,8 +1378,8 @@ lookArea.addEventListener('touchmove', (e) => {
     if (touch.identifier === state.lookTouch.id) {
       const dx = touch.clientX - state.lookTouch.lastX;
       const dy = touch.clientY - state.lookTouch.lastY;
-      state.yaw -= dx * 0.004;
-      state.pitch -= dy * 0.004;
+      state.yaw -= dx * 0.0025;
+      state.pitch -= dy * 0.0025;
       state.pitch = Math.max(-1.2, Math.min(1.2, state.pitch));
       state.lookTouch.lastX = touch.clientX;
       state.lookTouch.lastY = touch.clientY;
