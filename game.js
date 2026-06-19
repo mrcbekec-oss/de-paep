@@ -826,7 +826,8 @@ function updateBots(dt) {
     if (bot.state === 'attack' && bot.target === 'player') {
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
       bot.mesh.position.add(dir.multiplyScalar(4 * dt));
-      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z);
+      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z) + GROUND_SKIN;
+      resolveHorizontalCollision(bot.mesh.position);
       bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
 
       if (distToPlayer < 30 && bot.fireCooldown <= 0) {
@@ -858,7 +859,8 @@ function updateBots(dt) {
         }
       }
       bot.mesh.position.add(bot.moveDir.clone().multiplyScalar(3 * dt));
-      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z);
+      bot.mesh.position.y = getGroundHeight(bot.mesh.position.x, bot.mesh.position.z) + GROUND_SKIN;
+      resolveHorizontalCollision(bot.mesh.position);
     }
 
     // Bot vs bot combat
@@ -989,6 +991,13 @@ function updatePlayer(dt) {
     resolveHorizontalCollision(player.position);
     player.position.z += dz;
     resolveHorizontalCollision(player.position);
+
+    const groundY = getGroundHeight(player.position.x, player.position.z);
+    if (player.position.y < groundY) {
+      player.position.y = groundY + GROUND_SKIN;
+      state.velocity.y = 0;
+      state.onGround = true;
+    }
   }
 
   // Yer çekimi — alt adımlarla tünelleme önlenir
