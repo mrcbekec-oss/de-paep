@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Battle Island - Fortnite Tarzı Oyun</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="loading">
+    <div class="loader"></div>
+    <h1>BATTLE ISLAND</h1>
+    <p>Yükleniyor...</p>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-box">
+      <h1>BATTLE ISLAND</h1>
+      <p class="subtitle">Son ayakta kalan kazanır!</p>
+      <button id="play-btn">OYNA</button>
+      <div class="controls-info">
+        <h3>Kontroller</h3>
+        <div class="control-grid">
+          <span><b>WASD</b> Hareket</span>
+          <span><b>Mouse</b> Bakış</span>
+          <span><b>Sol Tık</b> Ateş / İnşa</span>
+          <span><b>1-4</b> Silah / İnşa</span>
+          <span><b>Space</b> Zıpla</span>
+          <span><b>Shift</b> Koş</span>
+          <span><b>R</b> Yeniden Doldur</span>
+          <span><b>Q</b> Malzeme Değiştir</span>
+        </div>
+        <p class="mobile-hint">📱 Mobilde dokunmatik kontroller otomatik açılır</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobil Kontroller -->
+  <div id="mobile-controls" class="hidden">
+    <div id="joystick-area">
+      <div id="joystick-base"></div>
+      <div id="joystick-stick"></div>
+    </div>
+    <div id="look-area"></div>
+    <div id="mobile-buttons">
+      <button class="mob-btn" id="btn-jump">⬆</button>
+      <button class="mob-btn" id="btn-fire">🔫</button>
+      <button class="mob-btn" id="btn-reload">R</button>
+      <button class="mob-btn" id="btn-build">🧱</button>
+    </div>
+    <div id="mobile-hotbar">
+      <button class="mob-slot active" data-slot="0">1</button>
+      <button class="mob-slot" data-slot="1">2</button>
+      <button class="mob-slot" data-slot="2">3</button>
+      <button class="mob-slot" data-slot="3">4</button>
+    </div>
+
+  <div id="hud" class="hidden">
+    <div id="top-bar">
+      <div id="players-left">
+        <span class="icon">👤</span>
+        <span id="alive-count">50</span>
+      </div>
+      <div id="storm-timer">
+        <span class="icon">⛈</span>
+        <span id="storm-countdown">2:00</span>
+      </div>
+      <div id="kills">
+        <span class="icon">💀</span>
+        <span id="kill-count">0</span>
+      </div>
+    </div>
+
+    <div id="crosshair">+</div>
+
+    <div id="bottom-hud">
+      <div id="health-bar">
+        <div class="bar-label">CAN</div>
+        <div class="bar-container">
+          <div id="health-fill" class="bar-fill health"></div>
+        </div>
+        <span id="health-text">100</span>
+      </div>
+      <div id="shield-bar">
+        <div class="bar-label">KALKAN</div>
+        <div class="bar-container">
+          <div id="shield-fill" class="bar-fill shield"></div>
+        </div>
+        <span id="shield-text">50</span>
+      </div>
+      <div id="materials">
+        <div class="mat-item active" data-mat="wood">
+          <span class="mat-icon">🪵</span>
+          <span id="wood-count">0</span>
+        </div>
+        <div class="mat-item" data-mat="stone">
+          <span class="mat-icon">🪨</span>
+          <span id="stone-count">0</span>
+        </div>
+        <div class="mat-item" data-mat="metal">
+          <span class="mat-icon">🔩</span>
+          <span id="metal-count">0</span>
+        </div>
+      </div>
+      <div id="hotbar">
+        <div class="slot active" data-slot="0">
+          <span class="slot-key">1</span>
+          <span class="slot-icon">🔫</span>
+          <span class="slot-name">AR</span>
+        </div>
+        <div class="slot" data-slot="1">
+          <span class="slot-key">2</span>
+          <span class="slot-icon">🔫</span>
+          <span class="slot-name">Pompalı</span>
+        </div>
+        <div class="slot" data-slot="2">
+          <span class="slot-key">3</span>
+          <span class="slot-icon">🧱</span>
+          <span class="slot-name">Duvar</span>
+        </div>
+        <div class="slot" data-slot="3">
+          <span class="slot-key">4</span>
+          <span class="slot-icon">📐</span>
+          <span class="slot-name">Rampa</span>
+        </div>
+      </div>
+      <div id="ammo">
+        <span id="ammo-current">30</span> / <span id="ammo-reserve">90</span>
+      </div>
+    </div>
+
+    <div id="damage-overlay"></div>
+    <div id="storm-overlay"></div>
+  </div>
+
+  <div id="game-over" class="hidden">
+    <div class="menu-box">
+      <h1 id="result-title">VICTORY ROYALE!</h1>
+      <p id="result-stats"></p>
+      <button id="restart-btn">TEKRAR OYNA</button>
+    </div>
+  </div>
+
+  <div id="kill-feed"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="game.js"></script>
+</body>
+</html>
