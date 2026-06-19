@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+const GAME_VERSION = '1.3.0';
+console.info(`Battle Island v${GAME_VERSION}`);
+
 // ─── Constants ───────────────────────────────────────────────
 const MAP_SIZE = 200;
 const PLAYER_HEIGHT = 1.75;

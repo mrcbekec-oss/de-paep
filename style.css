@@ -100,8 +100,15 @@ canvas {
 
 .subtitle {
   color: #aaa;
-  margin-bottom: 30px;
+  margin-bottom: 8px;
   font-size: 1.1rem;
+}
+
+.version-tag {
+  color: #666;
+  font-size: 0.75rem;
+  margin-bottom: 24px;
+  letter-spacing: 1px;
 }
 
 button {
