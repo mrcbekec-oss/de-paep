@@ -311,8 +311,49 @@ function createHumanoid(shirtColor, pantsColor = 0x2a2a4a, skinColor = 0xe8b896)
   group.userData.rightLeg = rightLeg;
   group.userData.leftArm = leftArm;
   group.userData.rightArm = rightArm;
+  group.userData.torso = torso;
+  group.userData.head = head;
+  group.userData.hair = hair;
+  group.userData.shirtMat = shirtMat;
+  group.userData.pantsMat = pantsMat;
+  group.userData.skinMat = skinMat;
+  group.userData.hairMat = hairMat;
 
   return group;
+}
+
+const COSTUMES = {
+  deadpool1: {
+    shirtColor: 0xdd1c1c,
+    pantsColor: 0x121212,
+    skinColor: 0xe8b896,
+    hairColor: 0x111111,
+  },
+  deadpool2: {
+    shirtColor: 0xbe0f0f,
+    pantsColor: 0x1f1f1f,
+    skinColor: 0xe8b896,
+    hairColor: 0x111111,
+  },
+};
+
+let currentCostume = 'deadpool1';
+
+function applyCostume(key) {
+  const costume = COSTUMES[key];
+  if (!costume) return;
+  currentCostume = key;
+  player.userData.shirtMat.color.set(costume.shirtColor);
+  player.userData.pantsMat.color.set(costume.pantsColor);
+  player.userData.skinMat.color.set(costume.skinColor);
+  player.userData.hairMat.color.set(costume.hairColor);
+  updateStoreSelection(key);
+}
+
+function updateStoreSelection(key) {
+  document.querySelectorAll('.store-item').forEach(item => {
+    item.classList.toggle('selected', item.dataset.costume === key);
+  });
 }
 
 function animateHumanWalk(human, speed, time) {
@@ -1338,6 +1379,20 @@ document.addEventListener('mouseup', (e) => {
 
 document.getElementById('play-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', resetGame);
+document.getElementById('store-btn').addEventListener('click', () => {
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('store').classList.remove('hidden');
+});
+document.getElementById('store-back-btn').addEventListener('click', () => {
+  document.getElementById('store').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+});
+document.querySelectorAll('.store-select').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const costume = btn.dataset.costume;
+    applyCostume(costume);
+  });
+});
 
 // ─── Mobil Kontroller ──────────────────────────────────────────
 function detectMobile() {
@@ -1519,6 +1574,7 @@ async function init() {
   camera.position.set(0, 5, 10);
   camera.lookAt(0, 1, 0);
 
+  applyCostume(currentCostume);
   document.getElementById('loading').classList.add('hidden');
   document.getElementById('menu').classList.remove('hidden');
 
