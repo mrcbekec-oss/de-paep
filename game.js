@@ -198,6 +198,10 @@ function getAimYaw() {
   return Math.atan2(-dir.x, -dir.z);
 }
 
+function updateCrosshairAlert(active) {
+  document.getElementById('crosshair').classList.toggle('active', active);
+}
+
 function resolveHorizontalCollision(pos) {
   const py = pos.y;
 
@@ -857,6 +861,8 @@ function botPlaceCover(bot, targetPosition) {
 }
 
 function updateBots(dt) {
+  let crosshairActive = false;
+
   for (const bot of bots) {
     if (!bot.alive) continue;
 
@@ -904,6 +910,7 @@ function updateBots(dt) {
         botPlaceCover(bot, player.position);
       }
     } else if (bot.state === 'attack' && bot.target === 'player') {
+      crosshairActive = true;
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
       bot.mesh.position.add(dir.multiplyScalar(4 * dt));
       clampBotToGround(bot);
@@ -965,6 +972,8 @@ function updateBots(dt) {
       }
     }
   }
+
+  updateCrosshairAlert(crosshairActive);
 }
 
 // ─── Storm System ──────────────────────────────────────────────

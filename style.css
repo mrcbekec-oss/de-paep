@@ -129,6 +129,33 @@ button:hover {
   box-shadow: 0 0 30px rgba(255,215,0,0.4);
 }
 
+.menu-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 0 auto 24px;
+  flex-wrap: wrap;
+}
+
+button.secondary {
+  background: rgba(255,215,0,0.18);
+  color: #fff;
+  border: 1px solid rgba(255,215,0,0.4);
+  box-shadow: none;
+}
+
+button.secondary:hover {
+  transform: scale(1.03);
+  box-shadow: 0 0 20px rgba(255,215,0,0.2);
+}
+
+.menu-author {
+  color: #f0c973;
+  margin-bottom: 8px;
+  font-size: 1rem;
+  letter-spacing: 3px;
+}
+
 .controls-info {
   margin-top: 30px;
   text-align: left;
@@ -192,6 +219,16 @@ button:hover {
   height: 22px;
   z-index: 160;
   pointer-events: none;
+}
+
+#crosshair.active .ch-line {
+  background: rgba(255, 100, 100, 1);
+  box-shadow: 0 0 10px rgba(255, 80, 80, 0.9);
+}
+
+#crosshair.active .ch-dot {
+  background: #ff4444;
+  box-shadow: 0 0 12px rgba(255, 80, 80, 0.9);
 }
 
 .ch-line {
