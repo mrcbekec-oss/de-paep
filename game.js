@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 const GAME_VERSION = '1.3.0';
 console.info(`Battle Island v${GAME_VERSION}`);
@@ -28,6 +29,18 @@ const WEAPONS = {
 
 const BUILD_COST = { wall: 10, ramp: 10 };
 const BUILD_HP = { wood: 150, stone: 300, metal: 500 };
+const DPAPEL_PACKAGES = [
+  { amount: 1000, price: 30 },
+  { amount: 2500, price: 70 },
+  { amount: 5000, price: 100 },
+  { amount: 10000, price: 150 },
+  { amount: 20000, price: 200 },
+];
+const COSTUME_PRICES = {
+  deadpool1: 2500,
+  deadpool2: 2500,
+  'Ch20_nonPBR.fbx': 2450,
+};
 
 // ─── Game State ────────────────────────────────────────────────
 const state = {
@@ -40,8 +53,11 @@ const state = {
   materials: { wood: 500, stone: 0, metal: 0 },
   activeMat: 'wood',
   hotbarSlot: 0,
+  dpapel: 0,
+  ownedCostumes: ['soldier'],
   weapon: 'ar',
   ammo: { ar: { current: 30, reserve: 90 }, shotgun: { current: 6, reserve: 18 } },
+  openChestHold: { active: false, chest: null, elapsed: 0, threshold: 0.8, isMobile: false },
   reloading: false,
   reloadTimer: 0,
   reloadDuration: 0,
@@ -104,9 +120,392 @@ scene.add(sunLight);
 const colliders = [];
 const buildings = [];
 const lootItems = [];
+const chests = [];
 const bots = [];
 const bullets = [];
 const particles = [];
+
+let gunGroup = null;
+const gunInitialPosition = new THREE.Vector3();
+const gunInitialRotation = new THREE.Euler();
+
+const player = new THREE.Group();
+player.name = 'Player';
+player.userData.isPlayer = true;
+player.visible = false;
+scene.add(player);
+loadPlayerModel();
+
+function loadPlayerModel() {
+  player.clear();
+  player.visible = false;
+  player.userData.model = null;
+  player.userData.mixer = null;
+  player.userData.actions = {};
+  player.userData.currentAction = null;
+  player.userData.actionState = 'Idle';
+
+  const loader = new FBXLoader();
+  const modelPath = './X%20Bot.fbx';
+  console.info('Loading player model:', modelPath);
+  loader.load(modelPath, (fbx) => {
+    fbx.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    const bbox = new THREE.Box3().setFromObject(fbx);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const targetHeight = PLAYER_HEIGHT;
+    const rawScale = size.y > 0 ? targetHeight / size.y : 1;
+    const maxModelScale = 0.22;
+    const scale = Math.min(rawScale, maxModelScale);
+    if (rawScale > maxModelScale) {
+      console.warn('Player model is being scaled down to avoid oversized appearance.', rawScale.toFixed(2), '->', maxModelScale);
+    }
+    fbx.scale.setScalar(scale);
+
+    const scaledBox = new THREE.Box3().setFromObject(fbx);
+    const minY = scaledBox.min.y;
+    fbx.position.y -= minY;
+
+    player.add(fbx);
+    player.visible = true;
+    player.userData.model = fbx;
+    player.userData.lastMoveYaw = 0;
+    player.userData.modelYawOffset = 0; // align model forward with player movement
+    setupPlayerProceduralParts(fbx);
+    setupMixamoArmBones(fbx);
+    loadRightHandWeapon();
+
+    if (fbx.animations && fbx.animations.length > 0) {
+      const mixer = new THREE.AnimationMixer(fbx);
+      player.userData.mixer = mixer;
+      player.userData.actions = {};
+
+      const clips = fbx.animations;
+      const idleClip = findClip(clips, ['Idle', 'idle', 'Stand', 'stand']);
+      const walkClip = findClip(clips, ['Walk', 'walk', 'WalkCycle']);
+      const runClip = findClip(clips, ['Run', 'run', 'Sprint', 'sprint']);
+      const reloadClip = findClip(clips, ['Reload', 'reload']);
+      const shootClip = findClip(clips, ['Shoot', 'shoot', 'Fire', 'fire']);
+
+      if (idleClip) player.userData.actions.Idle = mixer.clipAction(idleClip);
+      if (walkClip) player.userData.actions.Walk = mixer.clipAction(walkClip);
+      if (runClip) player.userData.actions.Run = mixer.clipAction(runClip);
+      if (reloadClip) player.userData.actions.Reload = mixer.clipAction(reloadClip);
+      if (shootClip) player.userData.actions.Shoot = mixer.clipAction(shootClip);
+
+      if (player.userData.actions.Idle) {
+        player.userData.actions.Idle.play();
+        player.userData.currentAction = player.userData.actions.Idle;
+      }
+    }
+
+    console.info('Player FBX model loaded:', fbx.name || 'X Bot', 'scale:', scale.toFixed(3));
+  }, undefined, (error) => {
+    console.error('Failed to load player FBX model:', error);
+  });
+}
+
+function loadCustomFBXModel(modelPath, enableArmSwing = true) {
+  player.clear();
+  player.visible = false;
+  player.userData.model = null;
+  player.userData.mixer = null;
+  player.userData.actions = {};
+  player.userData.currentAction = null;
+  player.userData.actionState = 'Idle';
+  player.userData.enableArmSwing = enableArmSwing;
+
+  const loader = new FBXLoader();
+  console.info('Loading custom FBX model:', modelPath);
+  loader.load(modelPath, (fbx) => {
+    fbx.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    const bbox = new THREE.Box3().setFromObject(fbx);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const targetHeight = PLAYER_HEIGHT;
+    const rawScale = size.y > 0 ? targetHeight / size.y : 1;
+    const maxModelScale = 0.22;
+    const scale = Math.min(rawScale, maxModelScale);
+    if (rawScale > maxModelScale) {
+      console.warn('Custom model is being scaled down to avoid oversized appearance.', rawScale.toFixed(2), '->', maxModelScale);
+    }
+    fbx.scale.setScalar(scale);
+
+    const scaledBox = new THREE.Box3().setFromObject(fbx);
+    const minY = scaledBox.min.y;
+    fbx.position.y -= minY;
+
+    player.add(fbx);
+    player.visible = true;
+    player.userData.model = fbx;
+    player.userData.lastMoveYaw = 0;
+    player.userData.modelYawOffset = 0;
+    setupPlayerProceduralParts(fbx);
+    setupMixamoArmBones(fbx);
+    loadRightHandWeapon();
+
+    if (fbx.animations && fbx.animations.length > 0) {
+      const mixer = new THREE.AnimationMixer(fbx);
+      player.userData.mixer = mixer;
+      player.userData.actions = {};
+
+      const clips = fbx.animations;
+      const idleClip = findClip(clips, ['Idle', 'idle', 'Stand', 'stand']);
+      const walkClip = findClip(clips, ['Walk', 'walk', 'WalkCycle']);
+      const runClip = findClip(clips, ['Run', 'run', 'Sprint', 'sprint']);
+      const reloadClip = findClip(clips, ['Reload', 'reload']);
+      const shootClip = findClip(clips, ['Shoot', 'shoot', 'Fire', 'fire']);
+
+      if (idleClip) player.userData.actions.Idle = mixer.clipAction(idleClip);
+      if (walkClip) player.userData.actions.Walk = mixer.clipAction(walkClip);
+      if (runClip) player.userData.actions.Run = mixer.clipAction(runClip);
+      if (reloadClip) player.userData.actions.Reload = mixer.clipAction(reloadClip);
+      if (shootClip) player.userData.actions.Shoot = mixer.clipAction(shootClip);
+
+      if (player.userData.actions.Idle) {
+        player.userData.actions.Idle.play();
+        player.userData.currentAction = player.userData.actions.Idle;
+      }
+    }
+
+    console.info('Custom FBX model loaded:', fbx.name || modelPath, 'scale:', scale.toFixed(3), 'armSwing:', enableArmSwing);
+  }, undefined, (error) => {
+    console.error('Failed to load custom FBX model:', error);
+  });
+}
+
+function findClip(clips, keywords) {
+  for (const keyword of keywords) {
+    const clip = clips.find(c => c.name.toLowerCase().includes(keyword.toLowerCase()));
+    if (clip) return clip;
+  }
+  return null;
+}
+
+function setupPlayerProceduralParts(root) {
+  const proceduralParts = [];
+
+  root.traverse((child) => {
+    if (child.type === 'Bone' || child.isBone || /(arm|leg|thigh|calf|spine|hip|shoulder|upperarm|lowerarm|upperleg|lowerleg)/i.test(child.name)) {
+      const type = getProceduralPartType(child.name);
+      const restRotation = child.rotation.clone();
+      proceduralParts.push({
+        node: child,
+        baseRotation: restRotation,
+        type,
+      });
+    }
+  });
+
+  if (proceduralParts.length === 0) {
+    proceduralParts.push({
+      node: root,
+      baseRotation: root.rotation.clone(),
+      type: 'Root',
+    });
+  }
+
+  player.userData.proceduralParts = proceduralParts;
+  player.userData.proceduralTime = 0;
+}
+
+function setupMixamoArmBones(root) {
+  const boneNames = ['LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm', 'RightHand'];
+  const bones = {};
+  const baseRotations = {};
+
+  root.traverse((child) => {
+    if (!child.isBone) return;
+    const normalizedName = child.name.toLowerCase();
+    if (boneNames.some(name => normalizedName.includes(name.toLowerCase()))) {
+      bones[child.name] = child;
+      baseRotations[child.name] = child.rotation.clone();
+    }
+  });
+
+  player.userData.mixamoArmBones = bones;
+  player.userData.mixamoArmBaseRotations = baseRotations;
+}
+
+function loadRightHandWeapon() {
+  const loader = new FBXLoader();
+  const weaponPath = './Sword%20Fight%20One.fbx';
+  loader.load(weaponPath, (fbx) => {
+    fbx.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    const weaponGroup = new THREE.Group();
+    weaponGroup.add(fbx);
+    weaponGroup.name = 'Weapon';
+    weaponGroup.scale.setScalar(0.7);
+    weaponGroup.position.set(0, 0, 0);
+    weaponGroup.rotation.set(0, 0, 0);
+
+    const handBone = player.userData.mixamoArmBones?.RightHand || player.userData.mixamoArmBones?.RightForeArm;
+    if (handBone) {
+      handBone.add(weaponGroup);
+      weaponGroup.position.set(0.05, -0.05, -0.1);
+      weaponGroup.rotation.set(-Math.PI / 2, 0, 0);
+      player.userData.handWeapon = weaponGroup;
+      console.info('Sword attached to hand bone:', handBone.name);
+    } else {
+      scene.add(weaponGroup);
+      player.userData.handWeapon = weaponGroup;
+      console.warn('RightHand bone not found; sword attached to scene root.');
+    }
+  }, undefined, (error) => {
+    console.error('Failed to load weapon FBX model:', error);
+  });
+}
+
+function updateMixamoWalkArms(moveAmount, walkPhase) {
+  const data = player.userData;
+  if (!data.mixamoArmBones) return;
+
+  const leftArm = data.mixamoArmBones.LeftArm;
+  const rightArm = data.mixamoArmBones.RightArm;
+  const leftForeArm = data.mixamoArmBones.LeftForeArm;
+  const rightForeArm = data.mixamoArmBones.RightForeArm;
+  if (!leftArm || !rightArm) return;
+
+  const leftBase = data.mixamoArmBaseRotations.LeftArm || leftArm.rotation.clone();
+  const rightBase = data.mixamoArmBaseRotations.RightArm || rightArm.rotation.clone();
+  const leftForeBase = data.mixamoArmBaseRotations.LeftForeArm || (leftForeArm ? leftForeArm.rotation.clone() : new THREE.Euler());
+  const rightForeBase = data.mixamoArmBaseRotations.RightForeArm || (rightForeArm ? rightForeArm.rotation.clone() : new THREE.Euler());
+
+  const swingAmp = 0.12 * moveAmount;
+  const bendAmp = 0.14 * moveAmount;
+  const leftSwing = Math.sin(walkPhase) * swingAmp;
+  const rightSwing = Math.sin(walkPhase + Math.PI) * swingAmp;
+  const leftElbow = 0.12 + Math.abs(Math.sin(walkPhase + Math.PI / 2)) * bendAmp;
+  const rightElbow = 0.12 + Math.abs(Math.sin(walkPhase - Math.PI / 2)) * bendAmp;
+
+  leftArm.rotation.x = leftBase.x + leftSwing;
+  rightArm.rotation.x = rightBase.x + rightSwing;
+  leftArm.rotation.z = leftBase.z + 0.02;
+  rightArm.rotation.z = rightBase.z - 0.02;
+  leftArm.rotation.y = leftBase.y;
+  rightArm.rotation.y = rightBase.y;
+
+  if (leftForeArm) {
+    leftForeArm.rotation.x = leftForeBase.x + leftElbow;
+    leftForeArm.rotation.y = leftForeBase.y;
+    leftForeArm.rotation.z = leftForeBase.z;
+  }
+  if (rightForeArm) {
+    rightForeArm.rotation.x = rightForeBase.x + rightElbow;
+    rightForeArm.rotation.y = rightForeBase.y;
+    rightForeArm.rotation.z = rightForeBase.z;
+  }
+}
+
+function getProceduralPartType(name) {
+  const lowered = name.toLowerCase();
+  if (/left|l_|l-/i.test(lowered) && /arm|shoulder|upperarm|lowerarm/i.test(lowered)) return 'LeftArm';
+  if (/right|r_|r-/i.test(lowered) && /arm|shoulder|upperarm|lowerarm/i.test(lowered)) return 'RightArm';
+  if (/left|l_|l-/i.test(lowered) && /leg|thigh|calf|foot|knee/i.test(lowered)) return 'LeftLeg';
+  if (/right|r_|r-/i.test(lowered) && /leg|thigh|calf|foot|knee/i.test(lowered)) return 'RightLeg';
+  if (/spine|chest|torso|hip|pelvis/i.test(lowered)) return 'Spine';
+  if (/head|neck/i.test(lowered)) return 'Head';
+  return 'Other';
+}
+
+function fadeToPlayerAction(actionName, duration = 0.2) {
+  const playerData = player.userData;
+  if (!playerData.mixer || !playerData.actions[actionName]) return;
+  if (playerData.actionState === actionName) return;
+
+  const nextAction = playerData.actions[actionName];
+  const currentAction = playerData.currentAction;
+  if (currentAction && currentAction !== nextAction) {
+    currentAction.fadeOut(duration);
+  }
+  nextAction.reset().fadeIn(duration).play();
+  playerData.currentAction = nextAction;
+  playerData.actionState = actionName;
+}
+
+function updatePlayerAnimation(moveAmount, sprinting, dt) {
+  const playerData = player.userData;
+
+  if (playerData.mixer) {
+    if (playerData.actionState === 'Reload' && state.reloading) {
+      // keep reloading until completed
+    } else if (state.reloading) {
+      fadeToPlayerAction('Reload', 0.1);
+    } else if (moveAmount > 0.1) {
+      fadeToPlayerAction(sprinting ? 'Run' : 'Walk', 0.15);
+    } else {
+      fadeToPlayerAction('Idle', 0.2);
+    }
+
+    playerData.mixer.update(dt);
+  }
+
+  updatePlayerProceduralMotion(dt, moveAmount, sprinting);
+}
+
+function updatePlayerProceduralMotion(dt, moveAmount, sprinting) {
+  const playerData = player.userData;
+  if (!playerData.proceduralParts || playerData.proceduralParts.length === 0) return;
+
+  playerData.proceduralTime += dt * (1 + moveAmount * 2);
+  const idlePhase = playerData.proceduralTime * 1.2;
+  const walkPhase = playerData.proceduralTime * 5;
+
+  for (const part of playerData.proceduralParts) {
+    const base = part.baseRotation;
+    const node = part.node;
+    const type = part.type;
+    const isMoving = moveAmount > 0.05;
+
+    let x = base.x;
+    let y = base.y;
+    let z = base.z;
+
+    if (type === 'LeftArm' || type === 'RightArm') {
+      const dir = type === 'LeftArm' ? 1 : -1;
+      const swing = Math.sin(walkPhase + (dir * Math.PI / 2)) * 0.06 * moveAmount;
+      const sway = Math.sin(walkPhase + dir) * 0.015 * moveAmount;
+      x += swing;
+      z += sway * 0.12;
+      y += isMoving ? Math.sin(walkPhase * 0.8 + dir) * 0.008 : Math.sin(idlePhase * 0.4 + dir) * 0.003;
+    } else if (type === 'LeftLeg' || type === 'RightLeg') {
+      const dir = type === 'LeftLeg' ? -1 : 1;
+      const swing = Math.sin(walkPhase + (dir * Math.PI / 2)) * 0.16 * moveAmount;
+      x += swing;
+      y += isMoving ? Math.sin(walkPhase * 0.45 + dir) * 0.015 : 0;
+      z += isMoving ? Math.cos(walkPhase + dir) * 0.005 : 0;
+    } else if (type === 'Spine') {
+      z += Math.sin(idlePhase * 0.6) * 0.01;
+      y += isMoving ? Math.sin(walkPhase * 0.3) * 0.006 : Math.sin(idlePhase * 0.2) * 0.002;
+    } else {
+      z += Math.sin(idlePhase * 0.5) * 0.01;
+    }
+
+    node.rotation.x = x;
+    node.rotation.y = y;
+    node.rotation.z = z;
+  }
+
+  updateMixamoWalkArms(moveAmount, walkPhase);
+}
 
 function createTerrain() {
   const geo = new THREE.PlaneGeometry(MAP_SIZE * 2, MAP_SIZE * 2, 64, 64);
@@ -151,8 +550,8 @@ function getGroundHeight(x, z) {
 
   for (const c of colliders) {
     if (c.type === 'box' &&
-        x >= c.x - c.hw - footRadius && x <= c.x + c.hw + footRadius &&
-        z >= c.z - c.hd - footRadius && z <= c.z + c.hd + footRadius) {
+      x >= c.x - c.hw - footRadius && x <= c.x + c.hw + footRadius &&
+      z >= c.z - c.hd - footRadius && z <= c.z + c.hd + footRadius) {
       if (c.maxY > height) height = c.maxY;
     }
   }
@@ -250,103 +649,298 @@ function resolveHorizontalCollision(pos) {
   }
 }
 
-function createHumanoid(shirtColor, pantsColor = 0x2a2a4a, skinColor = 0xe8b896) {
+function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
+  const showVisor = options.showVisor !== false;
   const group = new THREE.Group();
-  const skinMat = new THREE.MeshLambertMaterial({ color: skinColor });
-  const shirtMat = new THREE.MeshLambertMaterial({ color: shirtColor });
+  const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
   const pantsMat = new THREE.MeshLambertMaterial({ color: pantsColor });
-  const shoeMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-  const hairMat = new THREE.MeshLambertMaterial({ color: 0x3d2314 });
+  const gloveMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const beltMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const strapMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const headMat = new THREE.MeshLambertMaterial({ color: bodyColor });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const visorMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+  const accentMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+  const maskPatchMat = new THREE.MeshLambertMaterial({ color: bodyColor });
+  const shoeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
 
-  const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.8, 6), pantsMat);
-  leftLeg.position.set(-0.16, 0.4, 0);
+  const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.85, 6), pantsMat);
+  leftLeg.position.set(-0.17, 0.45, 0);
   leftLeg.castShadow = true;
   group.add(leftLeg);
 
-  const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.8, 6), pantsMat);
-  rightLeg.position.set(0.16, 0.4, 0);
+  const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.85, 6), pantsMat);
+  rightLeg.position.set(0.17, 0.45, 0);
   rightLeg.castShadow = true;
   group.add(rightLeg);
 
-  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.32), shoeMat);
-  leftShoe.position.set(-0.16, 0.05, 0.04);
+  const leftKnee = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.16), accentMat);
+  leftKnee.position.set(-0.17, 0.1, 0.08);
+  group.add(leftKnee);
+
+  const rightKnee = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.16), accentMat);
+  rightKnee.position.set(0.17, 0.1, 0.08);
+  group.add(rightKnee);
+
+  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.34), shoeMat);
+  leftShoe.position.set(-0.17, 0.03, 0.05);
   group.add(leftShoe);
 
-  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.32), shoeMat);
-  rightShoe.position.set(0.16, 0.05, 0.04);
+  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.34), shoeMat);
+  rightShoe.position.set(0.17, 0.03, 0.05);
   group.add(rightShoe);
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.65, 0.28), shirtMat);
-  torso.position.y = 1.05;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.78, 0.32), bodyMat);
+  torso.position.y = 1.08;
   torso.castShadow = true;
   group.add(torso);
 
-  const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.6, 6), shirtMat);
-  leftArm.position.set(-0.34, 1.0, 0);
-  leftArm.rotation.z = 0.2;
+  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.08), accentMat);
+  chestPlate.position.set(0, 0.08, 0.18);
+  torso.add(chestPlate);
+
+  const leftShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.18), strapMat);
+  leftShoulder.position.set(-0.33, 0.22, 0);
+  leftShoulder.rotation.z = 0.08;
+  torso.add(leftShoulder);
+
+  const rightShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.18), strapMat);
+  rightShoulder.position.set(0.33, 0.22, 0);
+  rightShoulder.rotation.z = -0.08;
+  torso.add(rightShoulder);
+
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.16, 0.32), beltMat);
+  belt.position.set(0, 0.82, 0);
+  group.add(belt);
+
+  const beltBuckle = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.02), accentMat);
+  beltBuckle.position.set(0, 0, 0.18);
+  belt.add(beltBuckle);
+
+  const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.58, 6), bodyMat);
+  leftArm.position.set(-0.36, 1.05, -0.02);
+  leftArm.rotation.z = 0.23;
   leftArm.castShadow = true;
   group.add(leftArm);
 
-  const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.6, 6), shirtMat);
-  rightArm.position.set(0.34, 1.0, 0);
-  rightArm.rotation.z = -0.2;
+  const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.58, 6), bodyMat);
+  rightArm.position.set(0.36, 1.05, -0.02);
+  rightArm.rotation.z = -0.23;
   rightArm.castShadow = true;
   group.add(rightArm);
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.15, 6), skinMat);
-  neck.position.y = 1.45;
+  const leftArmBand = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.14), accentMat);
+  leftArmBand.position.set(-0.36, 0.92, -0.02);
+  leftArmBand.rotation.z = 0.1;
+  group.add(leftArmBand);
+
+  const rightArmBand = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.14), accentMat);
+  rightArmBand.position.set(0.36, 0.92, -0.02);
+  rightArmBand.rotation.z = -0.1;
+  group.add(rightArmBand);
+
+  const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), gloveMat);
+  leftHand.position.set(-0.36, 0.68, 0.08);
+  leftHand.rotation.x = 0.05;
+  group.add(leftHand);
+
+  const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), gloveMat);
+  rightHand.position.set(0.36, 0.68, 0.08);
+  rightHand.rotation.x = 0.05;
+  group.add(rightHand);
+
+  const leftThumb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.02), gloveMat);
+  leftThumb.position.set(-0.28, 0.68, 0.14);
+  leftThumb.rotation.z = 0.6;
+  group.add(leftThumb);
+
+  const rightThumb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.02), gloveMat);
+  rightThumb.position.set(0.28, 0.68, 0.14);
+  rightThumb.rotation.z = -0.6;
+  group.add(rightThumb);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.15, 6), bodyMat);
+  neck.position.y = 1.5;
   group.add(neck);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), skinMat);
-  head.position.y = 1.65;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), headMat);
+  head.position.y = 1.7;
   head.castShadow = true;
   group.add(head);
 
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.27, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
-  hair.position.y = 1.72;
-  hair.rotation.x = -0.1;
+  if (showVisor) {
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.04), visorMat);
+    visor.position.set(0, 1.78, -0.2);
+    visor.rotation.x = 0.02;
+    group.add(visor);
+  }
+
+  const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.02), eyeMat);
+  leftEye.position.set(-0.095, 1.78, -0.22);
+  group.add(leftEye);
+
+  const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.02), eyeMat);
+  rightEye.position.set(0.095, 1.78, -0.22);
+  group.add(rightEye);
+
+  const leftMaskPatch = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.02), maskPatchMat);
+  leftMaskPatch.position.set(-0.12, 1.78, -0.16);
+  leftMaskPatch.rotation.y = 0.05;
+  group.add(leftMaskPatch);
+
+  const rightMaskPatch = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.02), maskPatchMat);
+  rightMaskPatch.position.set(0.12, 1.78, -0.16);
+  rightMaskPatch.rotation.y = -0.05;
+  group.add(rightMaskPatch);
+
+  const hairMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 10), hairMat);
+  hair.position.set(0, 1.86, 0);
+  hair.scale.set(1, 0.6, 1);
+  hair.castShadow = true;
   group.add(hair);
 
   group.userData.leftLeg = leftLeg;
   group.userData.rightLeg = rightLeg;
   group.userData.leftArm = leftArm;
   group.userData.rightArm = rightArm;
+  group.userData.leftHand = leftHand;
+  group.userData.rightHand = rightHand;
   group.userData.torso = torso;
   group.userData.head = head;
   group.userData.hair = hair;
-  group.userData.shirtMat = shirtMat;
+  group.userData.bodyMat = bodyMat;
   group.userData.pantsMat = pantsMat;
-  group.userData.skinMat = skinMat;
-  group.userData.hairMat = hairMat;
+  group.userData.headMat = headMat;
+  group.userData.gloveMat = gloveMat;
+  group.userData.beltMat = beltMat;
+  group.userData.strapMat = strapMat;
+  group.userData.maskPatchMat = maskPatchMat;
 
   return group;
 }
 
 const COSTUMES = {
   deadpool1: {
-    shirtColor: 0xdd1c1c,
+    bodyColor: 0xdd1c1c,
     pantsColor: 0x121212,
-    skinColor: 0xe8b896,
-    hairColor: 0x111111,
+    headColor: 0xdd1c1c,
+    gloveColor: 0x111111,
+    beltColor: 0x111111,
+    strapColor: 0x111111,
+    maskPatchColor: 0x111111,
+    hideHair: true,
   },
   deadpool2: {
-    shirtColor: 0xbe0f0f,
+    bodyColor: 0xbe0f0f,
     pantsColor: 0x1f1f1f,
-    skinColor: 0xe8b896,
-    hairColor: 0x111111,
+    headColor: 0xbe0f0f,
+    gloveColor: 0x111111,
+    beltColor: 0x111111,
+    strapColor: 0x111111,
+    maskPatchColor: 0x111111,
+    hideHair: true,
+  },
+  soldier: {
+    bodyColor: 0x445566,
+    pantsColor: 0x2f3b4a,
+    headColor: 0x445566,
+    gloveColor: 0x222222,
+    beltColor: 0x332211,
+    strapColor: 0x222222,
+    maskPatchColor: 0x222222,
+    hideHair: false,
+  },
+  camo: {
+    bodyColor: 0x6b8b3a,
+    pantsColor: 0x4a5a2a,
+    headColor: 0x6b8b3a,
+    gloveColor: 0x222222,
+    beltColor: 0x332211,
+    strapColor: 0x222222,
+    maskPatchColor: 0x222222,
+    hideHair: false,
+  },
+  scout: {
+    bodyColor: 0x2d9cdb,
+    pantsColor: 0x153544,
+    headColor: 0x2d9cdb,
+    gloveColor: 0x111111,
+    beltColor: 0x111111,
+    strapColor: 0x111111,
+    maskPatchColor: 0x111111,
+    hideHair: false,
+  },
+  merc: {
+    bodyColor: 0x8b5a2b,
+    pantsColor: 0x3b2f2f,
+    headColor: 0x8b5a2b,
+    gloveColor: 0x111111,
+    beltColor: 0x111111,
+    strapColor: 0x111111,
+    maskPatchColor: 0x111111,
+    hideHair: false,
+  },
+  'Ch20_nonPBR.fbx': {
+    isFBX: true,
+    modelPath: './Ch20_nonPBR.fbx',
+    enableArmSwing: true,
   },
 };
 
-let currentCostume = 'deadpool1';
+// Bot palettes can be edited quickly in `bot_palettes.json` (workspace root).
+let BOT_PALETTES = [
+  { body: 0x4f5d73, pants: 0x2f3c50, head: 0xe9c8a1, glove: 0x382c1f, belt: 0x3a3129, strap: 0x4a4a4a, maskPatch: 0x4f5d73, hideHair: false },
+  { body: 0x8b5e4a, pants: 0x3c2f22, head: 0xf1d1b5, glove: 0x2d2320, belt: 0x262020, strap: 0x4a4a4a, maskPatch: 0x8b5e4a, hideHair: false },
+  { body: 0x62785f, pants: 0x323e2f, head: 0xe0b695, glove: 0x2b2824, belt: 0x332f28, strap: 0x4a4a4a, maskPatch: 0x62785f, hideHair: false },
+  { body: 0x5a6f8b, pants: 0x2f434d, head: 0xdfbf9a, glove: 0x2f2b25, belt: 0x38322e, strap: 0x4a4a4a, maskPatch: 0x5a6f8b, hideHair: false },
+  { body: 0x8a7c5d, pants: 0x3d372d, head: 0xe7c6a0, glove: 0x2e2822, belt: 0x3b362f, strap: 0x4a4a4a, maskPatch: 0x8a7c5d, hideHair: false },
+  { body: 0x4c5f6e, pants: 0x22303a, head: 0xeaccb1, glove: 0x2a2622, belt: 0x2f2a24, strap: 0x4a4a4a, maskPatch: 0x4c5f6e, hideHair: false },
+];
+
+async function loadBotPalettes() {
+  try {
+    const res = await fetch('bot_palettes.json');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      BOT_PALETTES = data.map(p => ({
+        body: p.body ?? 0x888888,
+        pants: p.pants ?? 0x444444,
+        head: p.head ?? 0x111111,
+        glove: p.glove ?? 0x111111,
+        belt: p.belt ?? 0x222222,
+        strap: p.strap ?? 0x222222,
+        maskPatch: p.maskPatch ?? 0x222222,
+        hideHair: !!p.hideHair,
+      }));
+    }
+  } catch (e) {
+    // ignore, use defaults
+  }
+}
+
+let currentCostume = 'soldier';
 
 function applyCostume(key) {
   const costume = COSTUMES[key];
   if (!costume) return;
   currentCostume = key;
-  player.userData.shirtMat.color.set(costume.shirtColor);
-  player.userData.pantsMat.color.set(costume.pantsColor);
-  player.userData.skinMat.color.set(costume.skinColor);
-  player.userData.hairMat.color.set(costume.hairColor);
+
+  if (costume.isFBX) {
+    loadCustomFBXModel(costume.modelPath, costume.enableArmSwing);
+    updateStoreSelection(key);
+    return;
+  }
+
+  if (player.userData.bodyMat) player.userData.bodyMat.color.set(costume.bodyColor);
+  if (player.userData.pantsMat) player.userData.pantsMat.color.set(costume.pantsColor);
+  if (player.userData.headMat) player.userData.headMat.color.set(costume.headColor);
+  if (player.userData.gloveMat) player.userData.gloveMat.color.set(costume.gloveColor || 0x111111);
+  if (player.userData.beltMat) player.userData.beltMat.color.set(costume.beltColor || 0x111111);
+  if (player.userData.strapMat) player.userData.strapMat.color.set(costume.strapColor || 0x111111);
+  if (player.userData.maskPatchMat) player.userData.maskPatchMat.color.set(costume.maskPatchColor || 0x111111);
+  if (player.userData.hair) player.userData.hair.visible = costume.hideHair ? false : true;
   updateStoreSelection(key);
 }
 
@@ -409,10 +1003,10 @@ function createBuilding(x, z, w, d, h) {
   group.add(floor);
 
   const walls = [
-  { sx: w, sy: h, sz: 0.2, px: 0, py: h / 2, pz: d / 2 },
-  { sx: w, sy: h, sz: 0.2, px: 0, py: h / 2, pz: -d / 2 },
-  { sx: 0.2, sy: h, sz: d, px: w / 2, py: h / 2, pz: 0 },
-  { sx: 0.2, sy: h, sz: d, px: -w / 2, py: h / 2, pz: 0 },
+    { sx: w, sy: h, sz: 0.2, px: 0, py: h / 2, pz: d / 2 },
+    { sx: w, sy: h, sz: 0.2, px: 0, py: h / 2, pz: -d / 2 },
+    { sx: 0.2, sy: h, sz: d, px: w / 2, py: h / 2, pz: 0 },
+    { sx: 0.2, sy: h, sz: d, px: -w / 2, py: h / 2, pz: 0 },
   ];
   walls.forEach(wl => {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(wl.sx, wl.sy, wl.sz), wallMat);
@@ -462,6 +1056,13 @@ function generateWorld() {
       (Math.random() - 0.5) * MAP_SIZE
     );
   }
+
+  for (let i = 0; i < 8; i++) {
+    spawnChest(
+      (Math.random() - 0.5) * MAP_SIZE,
+      (Math.random() - 0.5) * MAP_SIZE
+    );
+  }
 }
 
 function spawnLoot(x, z) {
@@ -484,29 +1085,88 @@ function spawnLoot(x, z) {
   lootItems.push({ mesh, glow, type, x, z, collected: false });
 }
 
-// ─── Player ────────────────────────────────────────────────────
-const player = createHumanoid(0x3b82f6, 0x1e3a5f);
-player.userData.isPlayer = true;
+function spawnChest(x, z) {
+  const chestGeo = new THREE.BoxGeometry(1, 0.8, 1);
+  const chestMat = new THREE.MeshLambertMaterial({ color: 0x6b3e1a });
+  const chest = new THREE.Mesh(chestGeo, chestMat);
+  chest.position.set(x, getTerrainHeight(x, z) + 0.4, z);
+  chest.castShadow = true;
+  const lidGeo = new THREE.BoxGeometry(1.02, 0.16, 1.02);
+  const lidMat = new THREE.MeshLambertMaterial({ color: 0xb9772d });
+  const lid = new THREE.Mesh(lidGeo, lidMat);
+  lid.position.set(0, 0.5, 0);
+  lid.rotation.x = -0.05;
+  chest.add(lid);
+  scene.add(chest);
+  chests.push({ mesh: chest, x, z, opened: false, collected: false });
+}
 
-const gunGroup = new THREE.Group();
-const gunBody = new THREE.Mesh(
-  new THREE.BoxGeometry(0.06, 0.1, 0.45),
-  new THREE.MeshLambertMaterial({ color: 0x222222 })
-);
-gunBody.position.set(0.38, 1.05, -0.25);
-gunGroup.add(gunBody);
-const gunBarrel = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.025, 0.025, 0.3, 6),
-  new THREE.MeshLambertMaterial({ color: 0x111111 })
-);
-gunBarrel.rotation.x = Math.PI / 2;
-gunBarrel.position.set(0.38, 1.08, -0.52);
-gunGroup.add(gunBarrel);
-const gunInitialPosition = gunGroup.position.clone();
-const gunInitialRotation = gunGroup.rotation.clone();
-player.add(gunGroup);
+function getNearestWorldChest(maxDist = 3.5) {
+  let nearest = null;
+  let nearestDist = Infinity;
+  for (const chest of chests) {
+    if (chest.collected) continue;
+    const dist = player.position.distanceTo(new THREE.Vector3(chest.x, player.position.y, chest.z));
+    if (dist < nearestDist && dist <= maxDist) {
+      nearest = chest;
+      nearestDist = dist;
+    }
+  }
+  return nearest;
+}
 
-scene.add(player);
+function openWorldChest(chest) {
+  if (!chest || chest.collected) return;
+  chest.collected = true;
+  scene.remove(chest.mesh);
+  const reward = openChestReward();
+  applyChestReward(reward);
+  addKillFeed(`Kutu açıldı: ${reward.label}`);
+}
+
+function openChestReward() {
+  const roll = Math.random();
+  if (roll < 0.25) {
+    return { type: 'shield', amount: 25, label: 'Kalkan +25' };
+  }
+  if (roll < 0.55) {
+    const materials = ['wood', 'stone', 'metal'];
+    const material = materials[Math.floor(Math.random() * materials.length)];
+    return { type: material, amount: 80, label: `${material === 'wood' ? 'Tahta' : material === 'stone' ? 'Taş' : 'Metal'} +80` };
+  }
+  if (roll < 0.8) {
+    const guns = ['ar', 'shotgun'];
+    const gun = guns[Math.floor(Math.random() * guns.length)];
+    const amount = gun === 'ar' ? 30 : 10;
+    return { type: gun, amount, label: `${gun === 'ar' ? 'AR' : 'Pompalı'} cephane +${amount}` };
+  }
+  return { type: 'weapon', weapon: Math.random() > 0.5 ? 'ar' : 'shotgun', amount: 1, label: 'Yeni Silah' };
+}
+
+function applyChestReward(reward) {
+  switch (reward.type) {
+    case 'shield':
+      state.shield = Math.min(100, state.shield + reward.amount);
+      break;
+    case 'wood':
+    case 'stone':
+    case 'metal':
+      state.materials[reward.type] += reward.amount;
+      break;
+    case 'ar':
+    case 'shotgun':
+      state.ammo[reward.type].reserve += reward.amount;
+      break;
+    case 'weapon':
+      if (reward.weapon === 'ar') {
+        state.hotbarSlot = 0;
+      } else {
+        state.hotbarSlot = 1;
+      }
+      break;
+  }
+  updateHUD();
+}
 
 // ─── Storm Visual ──────────────────────────────────────────────
 let stormMesh = null;
@@ -533,6 +1193,7 @@ function updateStormVisual() {
 }
 
 function updateGunReloadAnimation() {
+  if (!gunGroup) return;
   if (state.reloading && state.reloadDuration > 0) {
     const progress = 1 - Math.max(0, state.reloadTimer) / state.reloadDuration;
     const ease = Math.sin(progress * Math.PI);
@@ -551,9 +1212,14 @@ function updateGunReloadAnimation() {
 const BOT_NAMES = ['Shadow', 'Blaze', 'Viper', 'Ghost', 'Raven', 'Storm', 'Fury', 'Ace', 'Nova', 'Titan', 'Wolf', 'Hawk', 'Bolt', 'Rex', 'Zara'];
 
 function createBot(x, z, index) {
-  const colors = [0xff4444, 0xff8844, 0xff44aa, 0x44aa44, 0x44aaff, 0xffaa00];
-  const pants = [0x4a2020, 0x4a3020, 0x4a2040, 0x204a20, 0x20304a, 0x4a4020];
-  const group = createHumanoid(colors[index % colors.length], pants[index % pants.length]);
+  const pal = BOT_PALETTES.length ? BOT_PALETTES[index % BOT_PALETTES.length] : { body: 0x888888, pants: 0x444444, head: 0xe0b895, glove: 0x111111, belt: 0x222222, strap: 0x222222, maskPatch: 0x888888, hideHair: false };
+  const group = createHumanoid(pal.body, pal.pants, { showVisor: false });
+  if (group.userData.headMat && pal.head) group.userData.headMat.color.set(pal.head);
+  if (group.userData.gloveMat && pal.glove) group.userData.gloveMat.color.set(pal.glove);
+  if (group.userData.beltMat && pal.belt) group.userData.beltMat.color.set(pal.belt);
+  if (group.userData.strapMat && pal.strap) group.userData.strapMat.color.set(pal.strap);
+  if (group.userData.maskPatchMat && pal.maskPatch) group.userData.maskPatchMat.color.set(pal.maskPatch);
+  if (group.userData.hair) group.userData.hair.visible = pal.hideHair ? false : true;
   const y = getGroundHeight(x, z);
   group.position.set(x, y, z);
   scene.add(group);
@@ -752,6 +1418,7 @@ function playerShoot() {
 
   // Recoil
   state.pitch += 0.01;
+  fadeToPlayerAction('Shoot', 0.05);
 }
 
 function reload() {
@@ -1078,6 +1745,59 @@ function updateLoot() {
   }
 }
 
+function updateChests(dt) {
+  for (const chest of chests) {
+    if (chest.collected) continue;
+    chest.mesh.rotation.y += 0.01;
+    chest.mesh.position.y = getTerrainHeight(chest.x, chest.z) + 0.4 + Math.sin(Date.now() * 0.002) * 0.03;
+  }
+}
+
+function startChestHold(isMobile = false) {
+  const chest = getNearestWorldChest();
+  if (!chest) {
+    cancelChestHold();
+    return;
+  }
+  state.openChestHold.active = true;
+  state.openChestHold.chest = chest;
+  state.openChestHold.elapsed = 0;
+  state.openChestHold.isMobile = isMobile;
+}
+
+function cancelChestHold() {
+  state.openChestHold.active = false;
+  state.openChestHold.chest = null;
+  state.openChestHold.elapsed = 0;
+}
+
+function startKeyboardChestHold() {
+  startChestHold(false);
+}
+
+function startMobileChestHold() {
+  startChestHold(true);
+}
+
+function updateChestHold(dt) {
+  if (!state.openChestHold.active || !state.openChestHold.chest) return;
+  const chest = state.openChestHold.chest;
+  if (chest.collected) {
+    cancelChestHold();
+    return;
+  }
+  const dist = player.position.distanceTo(new THREE.Vector3(chest.x, player.position.y, chest.z));
+  if (dist > 3.5) {
+    cancelChestHold();
+    return;
+  }
+  state.openChestHold.elapsed += dt;
+  if (state.openChestHold.elapsed >= state.openChestHold.threshold) {
+    openWorldChest(chest);
+    cancelChestHold();
+  }
+}
+
 function collectLoot(loot) {
   loot.collected = true;
   scene.remove(loot.mesh);
@@ -1160,15 +1880,22 @@ function updatePlayer(dt) {
     state.keys['jump'] = false;
   }
 
-  player.rotation.y = state.yaw;
-  animateHumanWalk(player, moveAmount * speed, performance.now() / 1000);
+  if (move.length() > 0.01) {
+    const moveYaw = Math.atan2(move.x, move.z);
+    player.userData.lastMoveYaw = moveYaw;
+    player.rotation.y = moveYaw + (player.userData.modelYawOffset || 0);
+  } else {
+    player.rotation.y = (player.userData.lastMoveYaw || state.yaw) + (player.userData.modelYawOffset || 0);
+  }
+
+  updatePlayerAnimation(moveAmount, sprinting, dt);
   updateGunReloadAnimation();
 
-  const camDist = state.isMobile ? 7 : 6;
-  const camHeight = 2.8;
-  camera.position.x = player.position.x + Math.sin(state.yaw) * camDist * Math.cos(state.pitch * 0.5);
-  camera.position.y = player.position.y + camHeight + Math.sin(state.pitch) * camDist * 0.5;
-  camera.position.z = player.position.z + Math.cos(state.yaw) * camDist * Math.cos(state.pitch * 0.5);
+  const camDist = state.isMobile ? 10 : 8;
+  const camHeight = state.isMobile ? 3.5 : 3.0;
+  camera.position.x = player.position.x + Math.sin(state.yaw) * camDist * Math.cos(state.pitch * 0.55);
+  camera.position.y = player.position.y + camHeight + Math.sin(state.pitch) * camDist * 0.55;
+  camera.position.z = player.position.z + Math.cos(state.yaw) * camDist * Math.cos(state.pitch * 0.55);
 
   const lookDist = 20;
   camera.lookAt(
@@ -1179,12 +1906,12 @@ function updatePlayer(dt) {
 
   // Collect nearby loot with E
   if (state.keys['e']) {
-  for (const loot of lootItems) {
-    if (!loot.collected && player.position.distanceTo(loot.mesh.position) < 5) {
-      collectLoot(loot);
-      break;
+    for (const loot of lootItems) {
+      if (!loot.collected && player.position.distanceTo(loot.mesh.position) < 5) {
+        collectLoot(loot);
+        break;
+      }
     }
-  }
   }
 
   // Reload
@@ -1200,6 +1927,7 @@ function updatePlayer(dt) {
       ammo.reserve -= available;
       state.reloading = false;
       updateHUD();
+      fadeToPlayerAction('Idle', 0.1);
     } else {
       updateHUD();
     }
@@ -1268,12 +1996,14 @@ function addKillFeed(text) {
 
 // ─── Game Flow ─────────────────────────────────────────────────
 function startGame() {
+  document.body.classList.add('playing');
   state.playing = true;
   state.kills = 0;
   state.alive = BOT_COUNT + 1;
   state.health = 100;
   state.shield = 50;
   state.materials = { wood: 500, stone: 0, metal: 0 };
+  state.openChestHold = { active: false, chest: null, elapsed: 0, threshold: 0.8, isMobile: false };
   state.stormPhase = 0;
   state.stormTimer = STORM_PHASES[0].wait;
   state.stormRadius = 100;
@@ -1298,6 +2028,7 @@ function startGame() {
 }
 
 function endGame(won) {
+  document.body.classList.remove('playing');
   state.playing = false;
   document.exitPointerLock();
   document.getElementById('hud').classList.add('hidden');
@@ -1312,7 +2043,7 @@ function endGame(won) {
     `${state.kills} öldürme | ${state.alive} oyuncu kaldı`;
 }
 
-function resetGame() {
+async function resetGame() {
   bullets.length = 0;
   particles.length = 0;
   buildings.forEach(b => scene.remove(b.mesh));
@@ -1329,6 +2060,7 @@ function resetGame() {
 
   generateWorld();
   createStormVisual();
+  await loadBotPalettes();
   spawnBots();
   scene.add(player);
   startGame();
@@ -1342,6 +2074,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '2') { state.hotbarSlot = 1; updateHUD(); }
   if (e.key === '3') { state.hotbarSlot = 2; updateHUD(); }
   if (e.key === '4') { state.hotbarSlot = 3; updateHUD(); }
+  if (e.key === 'e') startKeyboardChestHold();
   if (e.key === 'r') reload();
   if (e.key === 'q') {
     const mats = ['wood', 'stone', 'metal'];
@@ -1353,6 +2086,7 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('keyup', (e) => {
   state.keys[e.key.toLowerCase()] = false;
+  if (e.key === 'e') cancelKeyboardChestHold();
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -1379,25 +2113,139 @@ document.addEventListener('mouseup', (e) => {
 
 document.getElementById('play-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', resetGame);
-document.getElementById('store-btn').addEventListener('click', () => {
-  document.getElementById('menu').classList.add('hidden');
-  document.getElementById('store').classList.remove('hidden');
-});
-document.getElementById('store-back-btn').addEventListener('click', () => {
-  document.getElementById('store').classList.add('hidden');
-  document.getElementById('menu').classList.remove('hidden');
-});
-document.querySelectorAll('.store-select').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const costume = btn.dataset.costume;
-    applyCostume(costume);
+
+function showStoreMessage(text, duration = 2) {
+  const msg = document.getElementById('store-message');
+  if (!msg) return;
+  msg.textContent = text;
+  msg.classList.add('visible');
+  clearTimeout(msg._timeout);
+  msg._timeout = setTimeout(() => {
+    msg.classList.remove('visible');
+  }, duration * 1000);
+}
+
+function updateStoreUI() {
+  const balanceEl = document.getElementById('dpapel-balance');
+  if (balanceEl) {
+    balanceEl.textContent = state.dpapel.toLocaleString();
+  }
+
+  document.querySelectorAll('.costume-price').forEach(el => {
+    const key = el.dataset.costume;
+    const price = COSTUME_PRICES[key] || 0;
+    el.textContent = `${price.toLocaleString()} D-papel`;
   });
-});
+
+  document.querySelectorAll('.store-action').forEach(btn => {
+    const action = btn.dataset.action;
+    const costume = btn.dataset.costume;
+    if (action === 'buy' && costume) {
+      const owned = state.ownedCostumes.includes(costume);
+      btn.textContent = owned ? 'SEÇ' : `SATIN AL (${COSTUME_PRICES[costume] || 0})`;
+      btn.classList.toggle('owned', owned);
+    }
+  });
+}
+
+function buyDpapelPackage(amount, price) {
+  state.dpapel += amount;
+  updateStoreUI();
+  showStoreMessage(`${amount.toLocaleString()} D-papel satın alındı!`);
+}
+
+function purchaseCostume(costumeKey) {
+  if (state.ownedCostumes.includes(costumeKey)) {
+    applyCostume(costumeKey);
+    showStoreMessage('Kostüm seçildi.');
+    return;
+  }
+
+  const price = COSTUME_PRICES[costumeKey] || 0;
+  if (state.dpapel < price) {
+    showStoreMessage('Yeterli D-papel yok.');
+    return;
+  }
+
+  state.dpapel -= price;
+  state.ownedCostumes.push(costumeKey);
+  applyCostume(costumeKey);
+  updateStoreUI();
+  showStoreMessage('Kostüm satın alındı!');
+}
+
+function setupStoreUI() {
+  const storeBtn = document.getElementById('store-btn');
+  const storeBackBtn = document.getElementById('store-back-btn');
+  const costumesBtn = document.getElementById('costumes-btn');
+  const costumesBackBtn = document.getElementById('costumes-back-btn');
+  const storeActionButtons = document.querySelectorAll('.store-action');
+
+  window.openStore = function () {
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('store').classList.remove('hidden');
+    updateStoreUI();
+  };
+
+  window.closeStore = function () {
+    document.getElementById('store').classList.add('hidden');
+    document.getElementById('menu').classList.remove('hidden');
+  };
+
+  window.openCostumes = function () {
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('costumes').classList.remove('hidden');
+    updateStoreUI();
+  };
+
+  window.closeCostumes = function () {
+    document.getElementById('costumes').classList.add('hidden');
+    document.getElementById('menu').classList.remove('hidden');
+    updateStoreUI();
+  };
+
+  if (storeBtn) {
+    storeBtn.addEventListener('click', window.openStore);
+  }
+
+  if (storeBackBtn) {
+    storeBackBtn.addEventListener('click', window.closeStore);
+  }
+
+  if (costumesBtn) {
+    costumesBtn.addEventListener('click', window.openCostumes);
+  }
+
+  if (costumesBackBtn) {
+    costumesBackBtn.addEventListener('click', window.closeCostumes);
+  }
+
+  storeActionButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      if (action === 'package') {
+        buyDpapelPackage(Number(btn.dataset.amount), Number(btn.dataset.price));
+      } else if (action === 'buy' && btn.dataset.costume) {
+        purchaseCostume(btn.dataset.costume);
+      } else if (action === 'select' && btn.dataset.costume) {
+        if (state.ownedCostumes.includes(btn.dataset.costume) || btn.dataset.costume === 'soldier') {
+          applyCostume(btn.dataset.costume);
+          showStoreMessage('Kostüm seçildi.');
+        } else {
+          showStoreMessage('Bu kostümü önce mağazadan satın almalısın.');
+        }
+      }
+    });
+  });
+}
 
 // ─── Mobil Kontroller ──────────────────────────────────────────
 function detectMobile() {
-  state.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768;
-  if (state.isMobile) document.body.classList.add('mobile');
+  state.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 900;
+  if (state.isMobile) {
+    document.body.classList.add('mobile');
+    state.keys['shift'] = true; // mobile runs faster by default
+  }
 }
 
 const joystickArea = document.getElementById('joystick-area');
@@ -1529,6 +2377,19 @@ document.getElementById('btn-build').addEventListener('touchstart', (e) => {
   updateHUD();
 });
 
+document.getElementById('btn-open')?.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  startMobileChestHold();
+});
+document.getElementById('btn-open')?.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  cancelChestHold();
+});
+document.getElementById('btn-open')?.addEventListener('touchcancel', (e) => {
+  e.preventDefault();
+  cancelChestHold();
+});
+
 document.querySelectorAll('.mob-slot').forEach(btn => {
   btn.addEventListener('touchstart', (e) => {
     e.preventDefault();
@@ -1558,6 +2419,8 @@ function gameLoop(time) {
     updateParticles(dt);
     updateStorm(dt);
     updateLoot();
+    updateChests(dt);
+    updateChestHold(dt);
   }
 
   renderer.render(scene, camera);
@@ -1568,6 +2431,7 @@ async function init() {
   detectMobile();
   generateWorld();
   createStormVisual();
+  await loadBotPalettes();
   spawnBots();
 
   player.position.set(0, getGroundHeight(0, 0), 0);
@@ -1575,6 +2439,7 @@ async function init() {
   camera.lookAt(0, 1, 0);
 
   applyCostume(currentCostume);
+  setupStoreUI();
   document.getElementById('loading').classList.add('hidden');
   document.getElementById('menu').classList.remove('hidden');
 
@@ -1582,3 +2447,6 @@ async function init() {
 }
 
 init();
+
+
+

@@ -6,25 +6,26 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Battle Island - Fortnite Tarzı Oyun</title>
+  <title>DENİTE - Battle Royale</title>
   <link rel="stylesheet" href="style.css?v=1.3.0">
 </head>
 <body>
   <div id="loading">
     <div class="loader"></div>
-    <h1>BATTLE ISLAND</h1>
+    <h1>DENİTE</h1>
     <p>Yükleniyor...</p>
   </div>
 
   <div id="menu" class="hidden">
     <div class="menu-box">
-      <h1>BATTLE ISLAND</h1>
+      <h1>DENİTE</h1>
       <p class="menu-author">Denon'un Oyunu</p>
-      <p class="subtitle">Son ayakta kalan kazanır!</p>
+      <p class="subtitle">Ana Menü</p>
       <p class="version-tag">Sürüm 1.3.0</p>
       <div class="menu-actions">
         <button id="play-btn">OYNA</button>
         <button id="store-btn" class="secondary">MAĞAZA</button>
+        <button id="costumes-btn" class="secondary">KOSTÜMLER</button>
       </div>
       <div class="controls-info">
         <h3>Kontroller</h3>
@@ -46,20 +47,93 @@
   <div id="store" class="hidden">
     <div class="menu-box store-box">
       <h1>MAĞAZA</h1>
-      <p class="menu-author">KOSTÜMLER</p>
+      <p class="menu-author">D-PAPEL / KOSTÜM SATIŞI</p>
+      <div class="store-balance">Bakiyeniz: <strong id="dpapel-balance">0</strong> D-papel</div>
+      <div class="store-grid">
+        <div class="store-item package-item" data-package="1000" data-price="30">
+          <div class="store-swatch package-swatch">1000</div>
+          <h3>1000 D-papel</h3>
+          <p>30 TL</p>
+          <button class="store-action" data-action="package" data-amount="1000" data-price="30">SATIN AL</button>
+        </div>
+        <div class="store-item package-item" data-package="2500" data-price="70">
+          <div class="store-swatch package-swatch">2500</div>
+          <h3>2500 D-papel</h3>
+          <p>70 TL</p>
+          <button class="store-action" data-action="package" data-amount="2500" data-price="70">SATIN AL</button>
+        </div>
+        <div class="store-item package-item" data-package="5000" data-price="100">
+          <div class="store-swatch package-swatch">5000</div>
+          <h3>5000 D-papel</h3>
+          <p>100 TL</p>
+          <button class="store-action" data-action="package" data-amount="5000" data-price="100">SATIN AL</button>
+        </div>
+        <div class="store-item package-item" data-package="10000" data-price="150">
+          <div class="store-swatch package-swatch">10000</div>
+          <h3>10.000 D-papel</h3>
+          <p>150 TL</p>
+          <button class="store-action" data-action="package" data-amount="10000" data-price="150">SATIN AL</button>
+        </div>
+        <div class="store-item package-item" data-package="20000" data-price="200">
+          <div class="store-swatch package-swatch">20000</div>
+          <h3>20.000 D-papel</h3>
+          <p>200 TL</p>
+          <button class="store-action" data-action="package" data-amount="20000" data-price="200">SATIN AL</button>
+        </div>
+      </div>
+      <h2 class="section-title">Kostümler</h2>
       <div class="store-grid">
         <div class="store-item" data-costume="deadpool1">
           <div class="store-swatch red-suit"></div>
-          <h3>Kostüm 1</h3>
-          <button class="store-select" data-costume="deadpool1">SEÇ</button>
+          <h3>Deadpool Kostümü 1</h3>
+          <p class="costume-price" data-costume="deadpool1"></p>
+          <button class="store-action" data-action="buy" data-costume="deadpool1">SATIN AL</button>
         </div>
         <div class="store-item" data-costume="deadpool2">
           <div class="store-swatch red-suit-dark"></div>
-          <h3>Kostüm 2</h3>
-          <button class="store-select" data-costume="deadpool2">SEÇ</button>
+          <h3>Deadpool Kostümü 2</h3>
+          <p class="costume-price" data-costume="deadpool2"></p>
+          <button class="store-action" data-action="buy" data-costume="deadpool2">SATIN AL</button>
+        </div>
+        <div class="store-item" data-costume="Ch20_nonPBR.fbx">
+          <div class="store-swatch legendary-swatch"></div>
+          <h3>Efsanevi Karakter</h3>
+          <p class="costume-price" data-costume="Ch20_nonPBR.fbx"></p>
+          <button class="store-action" data-action="buy" data-costume="Ch20_nonPBR.fbx">SATIN AL</button>
         </div>
       </div>
-      <button id="store-back-btn" class="secondary">GERİ</button>
+      <div id="store-message" class="store-message"></div>
+      <button id="store-back-btn" class="secondary" onclick="closeStore()">ANA MENÜYE GERİ</button>
+    </div>
+  </div>
+
+  <div id="costumes" class="hidden">
+    <div class="menu-box store-box">
+      <h1>KOSTÜMLER</h1>
+      <p class="menu-author">GARDIROPUNUZ</p>
+      <div class="store-grid">
+        <div class="store-item" data-costume="soldier">
+          <div class="store-swatch default-suit"></div>
+          <h3>Base Kostüm</h3>
+          <button class="store-action" data-action="select" data-costume="soldier">SEÇ</button>
+        </div>
+        <div class="store-item" data-costume="deadpool1">
+          <div class="store-swatch red-suit"></div>
+          <h3>Deadpool Kostümü 1</h3>
+          <button class="store-action" data-action="select" data-costume="deadpool1">SEÇ</button>
+        </div>
+        <div class="store-item" data-costume="deadpool2">
+          <div class="store-swatch red-suit-dark"></div>
+          <h3>Deadpool Kostümü 2</h3>
+          <button class="store-action" data-action="select" data-costume="deadpool2">SEÇ</button>
+        </div>
+        <div class="store-item" data-costume="Ch20_nonPBR.fbx">
+          <div class="store-swatch legendary-swatch"></div>
+          <h3>Efsanevi Karakter</h3>
+          <button class="store-action" data-action="select" data-costume="Ch20_nonPBR.fbx">SEÇ</button>
+        </div>
+      </div>
+      <button id="costumes-back-btn" class="secondary">ANA MENÜYE GERİ</button>
     </div>
   </div>
 
@@ -74,6 +148,7 @@
       <button class="mob-btn" id="btn-jump">⬆</button>
       <button class="mob-btn" id="btn-fire">🔫</button>
       <button class="mob-btn" id="btn-reload">R</button>
+      <button class="mob-btn" id="btn-open">📦</button>
       <button class="mob-btn" id="btn-build">🧱</button>
     </div>
     <div id="mobile-hotbar">
@@ -188,6 +263,6 @@
     }
   }
   </script>
-  <script type="module" src="game.js?v=1.3.0"></script>
+  <script type="module" src="game.js?v=1.3.2"></script>
 </body>
 </html>

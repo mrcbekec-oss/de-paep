@@ -8,14 +8,15 @@ body {
   overflow: hidden;
   background: #0a0a1a;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  cursor: none;
+  cursor: default;
   user-select: none;
-  touch-action: none;
+  touch-action: auto;
   -webkit-touch-callout: none;
 }
 
-body.mobile {
-  cursor: default;
+body.playing {
+  cursor: none;
+  touch-action: none;
 }
 
 canvas {
@@ -50,28 +51,38 @@ canvas {
 }
 
 @keyframes shimmer {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.3); }
+
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+
+  50% {
+    filter: brightness(1.3);
+  }
 }
 
 .loader {
   width: 60px;
   height: 60px;
-  border: 4px solid rgba(255,255,255,0.1);
+  border: 4px solid rgba(255, 255, 255, 0.1);
   border-top-color: #ffd700;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Menu */
-#menu, #game-over {
+#menu,
+#game-over {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.7);
+  background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -80,13 +91,13 @@ canvas {
 }
 
 .menu-box {
-  background: linear-gradient(145deg, rgba(30,30,60,0.95), rgba(15,15,40,0.98));
-  border: 2px solid rgba(255,215,0,0.3);
+  background: linear-gradient(145deg, rgba(30, 30, 60, 0.95), rgba(15, 15, 40, 0.98));
+  border: 2px solid rgba(255, 215, 0, 0.3);
   border-radius: 16px;
   padding: 40px 60px;
   text-align: center;
   color: white;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .menu-box h1 {
@@ -126,7 +137,7 @@ button {
 
 button:hover {
   transform: scale(1.05);
-  box-shadow: 0 0 30px rgba(255,215,0,0.4);
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
 }
 
 .menu-actions {
@@ -138,15 +149,15 @@ button:hover {
 }
 
 button.secondary {
-  background: rgba(255,215,0,0.18);
+  background: rgba(255, 215, 0, 0.18);
   color: #fff;
-  border: 1px solid rgba(255,215,0,0.4);
+  border: 1px solid rgba(255, 215, 0, 0.4);
   box-shadow: none;
 }
 
 button.secondary:hover {
   transform: scale(1.03);
-  box-shadow: 0 0 20px rgba(255,215,0,0.2);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
 }
 
 .menu-actions {
@@ -158,9 +169,9 @@ button.secondary:hover {
 }
 
 button.secondary {
-  background: rgba(255,215,0,0.18);
+  background: rgba(255, 215, 0, 0.18);
   color: #fff;
-  border: 1px solid rgba(255,215,0,0.4);
+  border: 1px solid rgba(255, 215, 0, 0.4);
   box-shadow: none;
 }
 
@@ -171,20 +182,28 @@ button.secondary {
   letter-spacing: 3px;
 }
 
-#store {
+#store,
+#costumes {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.82);
+  background: rgba(0, 0, 0, 0.82);
   backdrop-filter: blur(10px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 600;
+  overflow-y: auto;
+  padding: 20px;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
+
 
 .store-box {
   max-width: 760px;
-  width: calc(100% - 60px);
+  width: 100%;
+  padding: 40px 60px;
+  margin: 20px 0;
 }
 
 .store-grid {
@@ -195,8 +214,8 @@ button.secondary {
 }
 
 .store-item {
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
   padding: 18px;
   color: white;
@@ -209,27 +228,74 @@ button.secondary {
 
 .store-item.selected {
   border-color: #ffd700;
-  box-shadow: 0 0 25px rgba(255,215,0,0.25);
+  box-shadow: 0 0 25px rgba(255, 215, 0, 0.25);
   transform: translateY(-2px);
 }
 
+.store-balance {
+  color: #f5f7b2;
+  font-size: 1.1rem;
+  margin-bottom: 18px;
+}
+
+.section-title {
+  color: #ffd700;
+  margin: 24px 0 12px;
+  font-size: 1.2rem;
+}
+
+.package-item .store-swatch {
+  background: linear-gradient(135deg, #ffba00, #ff6b00);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.store-message {
+  min-height: 24px;
+  margin-top: 12px;
+  color: #a8ffb0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.store-message.visible {
+  opacity: 1;
+}
+
+button.store-action.owned {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.costume-price {
+  color: #ccc;
+  font-size: 0.95rem;
+}
+
+.default-suit {
+  background: linear-gradient(135deg, #445566, #2c3b50);
+}
+
+.red-suit {
+  background: linear-gradient(135deg, #dd1c1c, #8b0000);
+}
+
+.red-suit-dark {
+  background: linear-gradient(135deg, #be0f0f, #5a0000);
+}
+
+.legendary-swatch {
+  background: linear-gradient(135deg, #ffd700, #ff8c00, #ff6b35);
+  animation: shimmer 2s infinite;
+}
+
 .store-swatch {
-  width: 100%;
-  height: 120px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.16);
-}
-
-.red-suit { background: linear-gradient(135deg, #d30f0f 0%, #b00b0b 100%); }
-.red-suit-dark { background: linear-gradient(135deg, #d30f0f 0%, #1b1b1b 100%); }
-
-.store-select {
-  width: 100%;
-}
-
-.controls-info {
-  margin-top: 30px;
-  text-align: left;
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  margin-bottom: 8px;
 }
 
 .controls-info h3 {
@@ -265,11 +331,11 @@ button.secondary {
   padding: 15px;
   font-size: 1.2rem;
   color: white;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
-#top-bar > div {
-  background: rgba(0,0,0,0.5);
+#top-bar>div {
+  background: rgba(0, 0, 0, 0.5);
   padding: 8px 20px;
   border-radius: 8px;
   display: flex;
@@ -347,7 +413,8 @@ button.secondary {
   gap: 10px;
 }
 
-#health-bar, #shield-bar {
+#health-bar,
+#shield-bar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -365,10 +432,10 @@ button.secondary {
 .bar-container {
   flex: 1;
   height: 20px;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .bar-fill {
@@ -385,7 +452,8 @@ button.secondary {
   background: linear-gradient(90deg, #3b82f6, #60a5fa);
 }
 
-#health-text, #shield-text {
+#health-text,
+#shield-text {
   color: white;
   font-size: 0.85rem;
   width: 30px;
@@ -398,7 +466,7 @@ button.secondary {
 }
 
 .mat-item {
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   padding: 6px 14px;
   border-radius: 6px;
   color: white;
@@ -421,8 +489,8 @@ button.secondary {
 .slot {
   width: 70px;
   height: 70px;
-  background: rgba(0,0,0,0.6);
-  border: 2px solid rgba(255,255,255,0.2);
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -434,8 +502,8 @@ button.secondary {
 
 .slot.active {
   border-color: #ffd700;
-  background: rgba(255,215,0,0.15);
-  box-shadow: 0 0 15px rgba(255,215,0,0.3);
+  background: rgba(255, 215, 0, 0.15);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
 }
 
 .slot-key {
@@ -465,10 +533,10 @@ button.secondary {
   width: 110px;
   height: 10px;
   margin-top: 6px;
-  border: 1px solid rgba(255,255,255,0.35);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 6px;
   overflow: hidden;
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.08);
   position: relative;
 }
 
@@ -491,17 +559,14 @@ button.secondary {
   justify-content: center;
   font-size: 0.65rem;
   color: #eef;
-  text-shadow: 0 0 4px rgba(0,0,0,0.7);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.7);
   pointer-events: none;
-}
-  font-weight: bold;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
 }
 
 #damage-overlay {
   position: fixed;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(255,0,0,0.4) 100%);
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(255, 0, 0, 0.4) 100%);
   opacity: 0;
   transition: opacity 0.2s;
   pointer-events: none;
@@ -510,7 +575,7 @@ button.secondary {
 #storm-overlay {
   position: fixed;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 30%, rgba(128,0,255,0.5) 100%);
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(128, 0, 255, 0.5) 100%);
   opacity: 0;
   transition: opacity 0.5s;
   pointer-events: none;
@@ -527,7 +592,7 @@ button.secondary {
 }
 
 .kill-entry {
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   color: white;
   padding: 6px 14px;
   border-radius: 4px;
@@ -536,12 +601,21 @@ button.secondary {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes fadeOut {
-  to { opacity: 0; }
+  to {
+    opacity: 0;
+  }
 }
 
 .build-preview {
@@ -562,19 +636,22 @@ button.secondary {
   inset: 0;
   z-index: 200;
   pointer-events: none;
+  touch-action: none;
 }
 
 #mobile-controls:not(.hidden) {
   display: block;
+  pointer-events: auto;
 }
 
 #joystick-area {
   position: absolute;
-  left: 16px;
-  bottom: 110px;
-  width: 150px;
-  height: 150px;
+  left: 12px;
+  bottom: 100px;
+  width: 180px;
+  height: 180px;
   pointer-events: auto;
+  touch-action: none;
 }
 
 #joystick-base {
@@ -589,12 +666,12 @@ button.secondary {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 50px;
-  height: 50px;
-  margin: -25px 0 0 -25px;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
   border-radius: 50%;
-  background: rgba(255, 215, 0, 0.6);
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 215, 0, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.6);
   transition: transform 0.05s;
 }
 
@@ -602,33 +679,35 @@ button.secondary {
   position: absolute;
   right: 0;
   top: 0;
-  width: 55%;
+  width: 50%;
   height: 100%;
   pointer-events: auto;
+  touch-action: none;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 #mobile-buttons {
   position: absolute;
-  right: 16px;
-  bottom: 110px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  right: 12px;
+  bottom: 100px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  align-items: center;
   pointer-events: auto;
 }
 
 .mob-btn {
-  width: 68px;
-  height: 68px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  width: 66px;
+  height: 66px;
+  border-radius: 22px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   color: white;
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   padding: 0;
   cursor: pointer;
+  touch-action: none;
 }
 
 .mob-btn:active {
@@ -647,16 +726,18 @@ button.secondary {
 }
 
 .mob-slot {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  width: 60px;
+  height: 60px;
+  min-width: 60px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.65);
+  border: 2px solid rgba(255, 255, 255, 0.28);
   color: white;
   font-weight: bold;
   font-size: 1rem;
   padding: 0;
   cursor: pointer;
+  touch-action: none;
 }
 
 .mob-slot.active {
@@ -674,7 +755,8 @@ button.secondary {
     font-size: 1.8rem;
   }
 
-  #health-bar, #shield-bar {
+  #health-bar,
+  #shield-bar {
     width: 260px;
   }
 
@@ -685,5 +767,33 @@ button.secondary {
 
   #hotbar {
     gap: 4px;
+  }
+
+  #mobile-buttons {
+    right: 10px;
+    bottom: 90px;
+    gap: 10px;
+  }
+
+  #joystick-area {
+    left: 10px;
+    bottom: 90px;
+    width: 170px;
+    height: 170px;
+  }
+
+  #look-area {
+    width: 52%;
+  }
+
+  .mob-btn {
+    width: 60px;
+    height: 60px;
+    font-size: 1.3rem;
+  }
+
+  .mob-slot {
+    width: 54px;
+    height: 54px;
   }
 }
