@@ -136,14 +136,71 @@ player.visible = false;
 scene.add(player);
 loadPlayerModel();
 
-function loadPlayerModel() {
+function setupProceduralPlayerFallback() {
   player.clear();
-  player.visible = false;
-  player.userData.model = null;
-  player.userData.mixer = null;
-  player.userData.actions = {};
-  player.userData.currentAction = null;
-  player.userData.actionState = 'Idle';
+  const costume = COSTUMES[currentCostume] || COSTUMES['soldier'];
+  const bodyColor = costume.bodyColor ?? 0x445566;
+  const pantsColor = costume.pantsColor ?? 0x2f3b4a;
+
+  const fbx = createHumanoid(bodyColor, pantsColor, { showVisor: true });
+  fbx.scale.setScalar(0.9);
+  player.add(fbx);
+  player.visible = true;
+  player.userData.model = fbx;
+  player.userData.lastMoveYaw = 0;
+  player.userData.modelYawOffset = 0;
+
+  setupPlayerProceduralParts(fbx);
+  setupMixamoArmBones(fbx);
+  loadRightHandWeapon();
+  console.info('Procedural player fallback initialized.');
+}
+
+function setupProceduralWeaponFallback() {
+  // If weapon is already present, remove it first
+  if (player.userData.handWeapon) {
+    if (player.userData.handWeapon.parent) {
+      player.userData.handWeapon.parent.remove(player.userData.handWeapon);
+    }
+    player.userData.handWeapon = null;
+  }
+
+  const handBone = player.userData.mixamoArmBones?.RightHand || player.userData.mixamoArmBones?.RightForeArm;
+
+  // Create a procedural sword (a simple box with a guard)
+  const swordGeo = new THREE.BoxGeometry(0.08, 0.9, 0.03);
+  const swordMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+  const swordMesh = new THREE.Mesh(swordGeo, swordMat);
+  swordMesh.castShadow = true;
+
+  // Guard
+  const guardGeo = new THREE.BoxGeometry(0.24, 0.05, 0.05);
+  const guardMat = new THREE.MeshLambertMaterial({ color: 0xaa8800 });
+  const guardMesh = new THREE.Mesh(guardGeo, guardMat);
+  guardMesh.position.y = -0.3;
+  swordMesh.add(guardMesh);
+
+  const weaponGroup = new THREE.Group();
+  weaponGroup.add(swordMesh);
+  weaponGroup.name = 'Weapon';
+
+  if (handBone) {
+    handBone.add(weaponGroup);
+    weaponGroup.position.set(0.05, -0.05, -0.1);
+    weaponGroup.rotation.set(-Math.PI / 2, 0, 0);
+  } else {
+    player.add(weaponGroup);
+    weaponGroup.position.set(0.3, 0.9, -0.4);
+    weaponGroup.rotation.set(-Math.PI / 4, 0, 0);
+  }
+
+  player.userData.handWeapon = weaponGroup;
+  console.info('Procedural weapon fallback initialized.');
+}
+
+function loadPlayerModel() {
+  // Initialize with procedural humanoid model immediately so the player is never invisible
+  setupProceduralPlayerFallback();
 
   const loader = new FBXLoader();
   const modelPath = './X%20Bot.fbx';
@@ -172,6 +229,8 @@ function loadPlayerModel() {
     const minY = scaledBox.min.y;
     fbx.position.y -= minY;
 
+    // Success: replace procedural model
+    player.clear();
     player.add(fbx);
     player.visible = true;
     player.userData.model = fbx;
@@ -207,18 +266,13 @@ function loadPlayerModel() {
 
     console.info('Player FBX model loaded:', fbx.name || 'X Bot', 'scale:', scale.toFixed(3));
   }, undefined, (error) => {
-    console.error('Failed to load player FBX model:', error);
+    console.error('Failed to load player FBX model. Keeping procedural fallback.', error);
   });
 }
 
 function loadCustomFBXModel(modelPath, enableArmSwing = true) {
-  player.clear();
-  player.visible = false;
-  player.userData.model = null;
-  player.userData.mixer = null;
-  player.userData.actions = {};
-  player.userData.currentAction = null;
-  player.userData.actionState = 'Idle';
+  // Set up procedural fallback immediately so the player is never invisible
+  setupProceduralPlayerFallback();
   player.userData.enableArmSwing = enableArmSwing;
 
   const loader = new FBXLoader();
@@ -247,6 +301,8 @@ function loadCustomFBXModel(modelPath, enableArmSwing = true) {
     const minY = scaledBox.min.y;
     fbx.position.y -= minY;
 
+    // Success: replace procedural model
+    player.clear();
     player.add(fbx);
     player.visible = true;
     player.userData.model = fbx;
@@ -282,7 +338,7 @@ function loadCustomFBXModel(modelPath, enableArmSwing = true) {
 
     console.info('Custom FBX model loaded:', fbx.name || modelPath, 'scale:', scale.toFixed(3), 'armSwing:', enableArmSwing);
   }, undefined, (error) => {
-    console.error('Failed to load custom FBX model:', error);
+    console.error('Failed to load custom FBX model. Keeping procedural fallback.', error);
   });
 }
 
@@ -326,20 +382,40 @@ function setupMixamoArmBones(root) {
   const bones = {};
   const baseRotations = {};
 
-  root.traverse((child) => {
-    if (!child.isBone) return;
-    const normalizedName = child.name.toLowerCase();
-    if (boneNames.some(name => normalizedName.includes(name.toLowerCase()))) {
-      bones[child.name] = child;
-      baseRotations[child.name] = child.rotation.clone();
+  // If it's a procedural humanoid, it will have userData parts instead of skeleton bones
+  if (root.userData.rightHand || root.userData.leftArm) {
+    if (root.userData.leftArm) bones['LeftArm'] = root.userData.leftArm;
+    if (root.userData.rightArm) bones['RightArm'] = root.userData.rightArm;
+    if (root.userData.leftHand) bones['LeftHand'] = root.userData.leftHand;
+    if (root.userData.rightHand) bones['RightHand'] = root.userData.rightHand;
+
+    for (const key in bones) {
+      baseRotations[key] = bones[key].rotation.clone();
     }
-  });
+  } else {
+    root.traverse((child) => {
+      if (!child.isBone) return;
+      const normalizedName = child.name.toLowerCase();
+      if (boneNames.some(name => normalizedName.includes(name.toLowerCase()))) {
+        bones[child.name] = child;
+        baseRotations[child.name] = child.rotation.clone();
+      }
+    });
+  }
 
   player.userData.mixamoArmBones = bones;
   player.userData.mixamoArmBaseRotations = baseRotations;
 }
 
 function loadRightHandWeapon() {
+  // If weapon is already present, remove it first
+  if (player.userData.handWeapon) {
+    if (player.userData.handWeapon.parent) {
+      player.userData.handWeapon.parent.remove(player.userData.handWeapon);
+    }
+    player.userData.handWeapon = null;
+  }
+
   const loader = new FBXLoader();
   const weaponPath = './Sword%20Fight%20One.fbx';
   loader.load(weaponPath, (fbx) => {
@@ -370,7 +446,8 @@ function loadRightHandWeapon() {
       console.warn('RightHand bone not found; sword attached to scene root.');
     }
   }, undefined, (error) => {
-    console.error('Failed to load weapon FBX model:', error);
+    console.error('Failed to load weapon FBX model. Falling back to procedural weapon.', error);
+    setupProceduralWeaponFallback();
   });
 }
 
@@ -665,11 +742,13 @@ function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
   const shoeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
 
   const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.85, 6), pantsMat);
+  leftLeg.name = 'LeftLeg';
   leftLeg.position.set(-0.17, 0.45, 0);
   leftLeg.castShadow = true;
   group.add(leftLeg);
 
   const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.85, 6), pantsMat);
+  rightLeg.name = 'RightLeg';
   rightLeg.position.set(0.17, 0.45, 0);
   rightLeg.castShadow = true;
   group.add(rightLeg);
@@ -691,6 +770,7 @@ function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
   group.add(rightShoe);
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.78, 0.32), bodyMat);
+  torso.name = 'Spine';
   torso.position.y = 1.08;
   torso.castShadow = true;
   group.add(torso);
@@ -718,12 +798,14 @@ function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
   belt.add(beltBuckle);
 
   const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.58, 6), bodyMat);
+  leftArm.name = 'LeftArm';
   leftArm.position.set(-0.36, 1.05, -0.02);
   leftArm.rotation.z = 0.23;
   leftArm.castShadow = true;
   group.add(leftArm);
 
   const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.58, 6), bodyMat);
+  rightArm.name = 'RightArm';
   rightArm.position.set(0.36, 1.05, -0.02);
   rightArm.rotation.z = -0.23;
   rightArm.castShadow = true;
@@ -740,11 +822,13 @@ function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
   group.add(rightArmBand);
 
   const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), gloveMat);
+  leftHand.name = 'LeftHand';
   leftHand.position.set(-0.36, 0.68, 0.08);
   leftHand.rotation.x = 0.05;
   group.add(leftHand);
 
   const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), gloveMat);
+  rightHand.name = 'RightHand';
   rightHand.position.set(0.36, 0.68, 0.08);
   rightHand.rotation.x = 0.05;
   group.add(rightHand);
@@ -764,6 +848,7 @@ function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
   group.add(neck);
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), headMat);
+  head.name = 'Head';
   head.position.y = 1.7;
   head.castShadow = true;
   group.add(head);
