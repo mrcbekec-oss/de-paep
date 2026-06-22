@@ -142,7 +142,7 @@ function setupProceduralPlayerFallback() {
   const bodyColor = costume.bodyColor ?? 0x445566;
   const pantsColor = costume.pantsColor ?? 0x2f3b4a;
 
-  const fbx = createHumanoid(bodyColor, pantsColor, { showVisor: true });
+  const fbx = createHumanoid(bodyColor, pantsColor, { showVisor: true, ...costume });
   fbx.scale.setScalar(0.9);
   player.add(fbx);
   player.visible = true;
@@ -731,13 +731,13 @@ function createHumanoid(bodyColor, pantsColor = 0x2a2a4a, options = {}) {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
   const pantsMat = new THREE.MeshLambertMaterial({ color: pantsColor });
-  const gloveMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const beltMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const strapMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const headMat = new THREE.MeshLambertMaterial({ color: bodyColor });
-  const eyeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  const visorMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-  const accentMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+  const gloveMat = new THREE.MeshLambertMaterial({ color: options.gloveColor ?? 0x111111 });
+  const beltMat = new THREE.MeshLambertMaterial({ color: options.beltColor ?? 0x111111 });
+  const strapMat = new THREE.MeshLambertMaterial({ color: options.strapColor ?? 0x111111 });
+  const headMat = new THREE.MeshLambertMaterial({ color: options.headColor ?? bodyColor });
+  const eyeMat = new THREE.MeshLambertMaterial({ color: options.eyeColor ?? 0xffffff });
+  const visorMat = new THREE.MeshLambertMaterial({ color: options.visorColor ?? 0x222222 });
+  const accentMat = new THREE.MeshLambertMaterial({ color: options.accentColor ?? 0xffd700 });
   const maskPatchMat = new THREE.MeshLambertMaterial({ color: bodyColor });
   const shoeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
 
@@ -970,6 +970,15 @@ const COSTUMES = {
     isFBX: true,
     modelPath: './Ch20_nonPBR.fbx',
     enableArmSwing: true,
+    bodyColor: 0x111111,
+    pantsColor: 0xff0000,
+    headColor: 0x111111,
+    gloveColor: 0x111111,
+    beltColor: 0xffd700,
+    visorColor: 0xff0000,
+    accentColor: 0xffd700,
+    maskPatchColor: 0xffd700,
+    hideHair: true,
   },
 };
 
