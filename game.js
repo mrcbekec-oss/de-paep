@@ -2406,10 +2406,12 @@ function handleJoystickEnd(e) {
   }
 }
 
-joystickArea.addEventListener('touchstart', handleJoystickStart, { passive: false });
-joystickArea.addEventListener('touchmove', handleJoystickMove, { passive: false });
-joystickArea.addEventListener('touchend', handleJoystickEnd);
-joystickArea.addEventListener('touchcancel', handleJoystickEnd);
+if (joystickArea) {
+  joystickArea.addEventListener('touchstart', handleJoystickStart, { passive: false });
+  joystickArea.addEventListener('touchmove', handleJoystickMove, { passive: false });
+  joystickArea.addEventListener('touchend', handleJoystickEnd);
+  joystickArea.addEventListener('touchcancel', handleJoystickEnd);
+}
 
 const lookArea = document.getElementById('look-area');
 
