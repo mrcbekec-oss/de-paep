@@ -93,10 +93,13 @@ scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 80, 250);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// Mobilde antialias kapalı → daha az GPU yükü
+const _isMobileDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 900;
+const renderer = new THREE.WebGLRenderer({ antialias: !_isMobileDevice });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+// Mobilde pixel ratio 1'de kap → bellek tasarrufu
+renderer.setPixelRatio(_isMobileDevice ? 1.0 : Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = !_isMobileDevice; // Mobilde shadow map kapat
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
@@ -274,6 +277,13 @@ function loadCustomFBXModel(modelPath, enableArmSwing = true) {
   // Set up procedural fallback immediately so the player is never invisible
   setupProceduralPlayerFallback();
   player.userData.enableArmSwing = enableArmSwing;
+
+  // Mobilde büyük FBX dosyaları (Ch20_nonPBR.fbx gibi ~52MB) yüklenemez,
+  // bellek yetersizliği ve çökmeye neden olur. Mobilde prosedürel modeli kullan.
+  if (state.isMobile) {
+    console.warn('Mobil cihazda büyük FBX modeli atlanıyor, prosedürel model kullanılıyor:', modelPath);
+    return;
+  }
 
   const loader = new FBXLoader();
   console.info('Loading custom FBX model:', modelPath);
@@ -2521,23 +2531,34 @@ function gameLoop(time) {
 }
 
 // ─── Init ──────────────────────────────────────────────────────
+function hideLoading() {
+  const loadingEl = document.getElementById('loading');
+  if (loadingEl) loadingEl.classList.add('hidden');
+  const menuEl = document.getElementById('menu');
+  if (menuEl) menuEl.classList.remove('hidden');
+}
+
 async function init() {
-  detectMobile();
-  generateWorld();
-  createStormVisual();
-  await loadBotPalettes();
-  spawnBots();
+  try {
+    detectMobile();
+    generateWorld();
+    createStormVisual();
+    await loadBotPalettes();
+    spawnBots();
 
-  player.position.set(0, getGroundHeight(0, 0), 0);
-  camera.position.set(0, 5, 10);
-  camera.lookAt(0, 1, 0);
+    player.position.set(0, getGroundHeight(0, 0), 0);
+    camera.position.set(0, 5, 10);
+    camera.lookAt(0, 1, 0);
 
-  applyCostume(currentCostume);
-  setupStoreUI();
-  document.getElementById('loading').classList.add('hidden');
-  document.getElementById('menu').classList.remove('hidden');
-
-  gameLoop(0);
+    applyCostume(currentCostume);
+    setupStoreUI();
+  } catch (err) {
+    console.error('Init hatası:', err);
+  } finally {
+    // Her durumda loading ekranı kapanır
+    hideLoading();
+    gameLoop(0);
+  }
 }
 
 init();
