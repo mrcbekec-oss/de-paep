@@ -124,6 +124,7 @@ const colliders = [];
 const buildings = [];
 const lootItems = [];
 const chests = [];
+const healStations = [];
 const bots = [];
 const bullets = [];
 const particles = [];
@@ -1167,6 +1168,17 @@ function generateWorld() {
       (Math.random() - 0.5) * MAP_SIZE
     );
   }
+
+  // Şifa İstasyonları — sabit konumlar
+  const healPositions = [
+    [15, 15, 'health'],
+    [-15, -15, 'health'],
+    [40, -10, 'health'],
+    [-10, 40, 'shield'],
+    [10, -40, 'shield'],
+    [-40, 10, 'shield'],
+  ];
+  healPositions.forEach(([x, z, type]) => createHealStation(x, z, type));
 }
 
 function spawnLoot(x, z) {
@@ -1270,6 +1282,197 @@ function applyChestReward(reward) {
       break;
   }
   updateHUD();
+}
+
+// ─── Şifa İstasyonları ─────────────────────────────────────────
+const HEAL_COOLDOWN = 45;    // saniye
+const HEAL_STATION_RADIUS = 3.0;
+const HEAL_STATION_AMOUNT = 30;
+const SHIELD_STATION_AMOUNT = 30;
+
+function createHealStation(x, z, type) {
+  const isHealth = type === 'health';
+  const baseColor = isHealth ? 0x22dd55 : 0x3399ff;
+  const glowColor = isHealth ? 0x00ff66 : 0x00aaff;
+  const emissiveColor = isHealth ? 0x006622 : 0x003366;
+
+  const group = new THREE.Group();
+  const groundY = getTerrainHeight(x, z);
+  group.position.set(x, groundY, z);
+  scene.add(group);
+
+  // Zemin plakası
+  const baseGeo = new THREE.CylinderGeometry(1.4, 1.6, 0.25, 12);
+  const baseMat = new THREE.MeshLambertMaterial({ color: 0x222233 });
+  const base = new THREE.Mesh(baseGeo, baseMat);
+  base.position.y = 0.125;
+  base.castShadow = true;
+  group.add(base);
+
+  // Ana sütun
+  const pillarGeo = new THREE.CylinderGeometry(0.28, 0.32, 2.2, 10);
+  const pillarMat = new THREE.MeshLambertMaterial({
+    color: baseColor,
+    emissive: emissiveColor,
+    emissiveIntensity: 0.6
+  });
+  const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+  pillar.position.y = 1.35;
+  pillar.castShadow = true;
+  group.add(pillar);
+
+  // Üst küre
+  const sphereGeo = new THREE.SphereGeometry(0.42, 14, 14);
+  const sphereMat = new THREE.MeshLambertMaterial({
+    color: glowColor,
+    emissive: glowColor,
+    emissiveIntensity: 1.0,
+    transparent: true,
+    opacity: 0.92
+  });
+  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  sphere.position.y = 2.7;
+  group.add(sphere);
+
+  // Halo halkası
+  const ringGeo = new THREE.TorusGeometry(0.7, 0.07, 8, 28);
+  const ringMat = new THREE.MeshLambertMaterial({
+    color: glowColor,
+    emissive: glowColor,
+    emissiveIntensity: 0.9,
+    transparent: true,
+    opacity: 0.75
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.y = 2.7;
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring);
+
+  // Sembol (H = can, S = kalkan) — küçük ince silindir
+  const symbolGeo = new THREE.BoxGeometry(0.12, 0.55, 0.12);
+  const symbolMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const symbolV = new THREE.Mesh(symbolGeo, symbolMat);
+  symbolV.position.y = 2.7;
+  symbolV.position.z = -0.28;
+  group.add(symbolV);
+  const symbolH = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.12), symbolMat);
+  symbolH.position.y = isHealth ? 2.7 : 2.85;
+  symbolH.position.z = -0.28;
+  group.add(symbolH);
+  if (isHealth) {
+    // artı işareti için yatay çubuk
+    const symbolH2 = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.12), symbolMat);
+    symbolH2.position.y = 2.7;
+    symbolH2.position.z = -0.28;
+    group.add(symbolH2);
+  }
+
+  // Işık
+  const light = new THREE.PointLight(glowColor, 1.2, 10);
+  light.position.set(x, groundY + 3, z);
+  scene.add(light);
+
+  healStations.push({
+    group, sphere, ring, light, pillarMat, sphereMat, ringMat,
+    x, z, type,
+    cooldownTimer: 0,  // kalan bekleme süresi (sn)
+    ready: true,       // kullanıma hazır mı
+  });
+}
+
+function updateHealStations(dt) {
+  const now = Date.now();
+  for (const station of healStations) {
+    // Bekleme süresi sayacı
+    if (!station.ready) {
+      station.cooldownTimer -= dt;
+      if (station.cooldownTimer <= 0) {
+        station.ready = true;
+        station.cooldownTimer = 0;
+        // Tekrar aktif olunca parlat
+        station.sphereMat.opacity = 0.92;
+        station.pillarMat.emissiveIntensity = 0.6;
+        station.light.intensity = 1.2;
+      } else {
+        // Soluk görünüm
+        const frac = 1 - station.cooldownTimer / HEAL_COOLDOWN;
+        station.sphereMat.opacity = 0.25 + frac * 0.67;
+        station.pillarMat.emissiveIntensity = 0.08 + frac * 0.52;
+        station.light.intensity = 0.15 + frac * 1.05;
+      }
+    }
+
+    // Animasyon: küre + halka dönüşü
+    station.sphere.position.y = 2.7 + Math.sin(now * 0.0025 + station.x) * 0.18;
+    station.ring.rotation.z = now * 0.0018 + station.x;
+    station.ring.position.y = station.sphere.position.y;
+
+    // Yakınlık bildirimi
+    if (station.ready && state.playing) {
+      const dist = Math.sqrt(
+        (player.position.x - station.x) ** 2 +
+        (player.position.z - station.z) ** 2
+      );
+      if (dist < HEAL_STATION_RADIUS) {
+        showHealPrompt(station.type);
+      }
+    }
+  }
+}
+
+function useNearestHealStation() {
+  if (!state.playing) return;
+  let closest = null;
+  let closestDist = Infinity;
+  for (const s of healStations) {
+    if (!s.ready) continue;
+    const dist = Math.sqrt(
+      (player.position.x - s.x) ** 2 +
+      (player.position.z - s.z) ** 2
+    );
+    if (dist < HEAL_STATION_RADIUS && dist < closestDist) {
+      closest = s;
+      closestDist = dist;
+    }
+  }
+  if (!closest) return;
+
+  if (closest.type === 'health') {
+    const before = state.health;
+    state.health = Math.min(100, state.health + HEAL_STATION_AMOUNT);
+    const gained = Math.round(state.health - before);
+    if (gained > 0) {
+      addKillFeed(`💚 Can +${gained} (${state.health}/100)`);
+    } else {
+      addKillFeed('💚 Can zaten dolu!');
+    }
+  } else {
+    const before = state.shield;
+    state.shield = Math.min(100, state.shield + SHIELD_STATION_AMOUNT);
+    const gained = Math.round(state.shield - before);
+    if (gained > 0) {
+      addKillFeed(`🛡️ Kalkan +${gained} (${state.shield}/100)`);
+    } else {
+      addKillFeed('🛡️ Kalkan zaten dolu!');
+    }
+  }
+
+  updateHUD();
+  closest.ready = false;
+  closest.cooldownTimer = HEAL_COOLDOWN;
+}
+
+let _healPromptTimeout = null;
+function showHealPrompt(type) {
+  const el = document.getElementById('heal-prompt');
+  if (!el) return;
+  const icon = type === 'health' ? '💚' : '🛡️';
+  const text = type === 'health' ? 'Can İstasyonu' : 'Kalkan İstasyonu';
+  const key = state.isMobile ? 'Dokun' : 'E';
+  el.innerHTML = `${icon} <b>${text}</b> — [${key}] kullan`;
+  el.classList.add('visible');
+  clearTimeout(_healPromptTimeout);
+  _healPromptTimeout = setTimeout(() => el.classList.remove('visible'), 1200);
 }
 
 // ─── Storm Visual ──────────────────────────────────────────────
@@ -2155,6 +2358,8 @@ async function resetGame() {
   colliders.length = 0;
   lootItems.forEach(l => { if (!l.collected) { scene.remove(l.mesh); scene.remove(l.glow); } });
   lootItems.length = 0;
+  healStations.forEach(s => { scene.remove(s.group); scene.remove(s.light); });
+  healStations.length = 0;
   bots.forEach(b => scene.remove(b.mesh));
   bots.length = 0;
 
@@ -2178,7 +2383,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '2') { state.hotbarSlot = 1; updateHUD(); }
   if (e.key === '3') { state.hotbarSlot = 2; updateHUD(); }
   if (e.key === '4') { state.hotbarSlot = 3; updateHUD(); }
-  if (e.key === 'e') startKeyboardChestHold();
+  if (e.key === 'e') {
+    startKeyboardChestHold();
+    useNearestHealStation();
+  }
   if (e.key === 'r') reload();
   if (e.key === 'q') {
     const mats = ['wood', 'stone', 'metal'];
@@ -2527,6 +2735,7 @@ function gameLoop(time) {
     updateLoot();
     updateChests(dt);
     updateChestHold(dt);
+    updateHealStations(dt);
   }
 
   renderer.render(scene, camera);

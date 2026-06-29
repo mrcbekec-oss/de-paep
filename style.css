@@ -581,6 +581,31 @@ button.store-action.owned {
   pointer-events: none;
 }
 
+#heal-prompt {
+  position: fixed;
+  bottom: 160px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.72);
+  border: 1.5px solid rgba(80, 255, 140, 0.55);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 9px 22px;
+  border-radius: 10px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  white-space: nowrap;
+  z-index: 200;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 18px rgba(0, 255, 100, 0.22);
+}
+
+#heal-prompt.visible {
+  opacity: 1;
+}
+
 #kill-feed {
   position: fixed;
   top: 60px;
