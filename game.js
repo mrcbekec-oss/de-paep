@@ -137,7 +137,7 @@ player.name = 'Player';
 player.userData.isPlayer = true;
 player.visible = false;
 scene.add(player);
-loadPlayerModel();
+
 
 function setupProceduralPlayerFallback() {
   player.clear();
@@ -2541,6 +2541,7 @@ function hideLoading() {
 async function init() {
   try {
     detectMobile();
+    loadPlayerModel();
     generateWorld();
     createStormVisual();
     await loadBotPalettes();
