@@ -2683,6 +2683,16 @@ document.getElementById('btn-reload').addEventListener('touchstart', (e) => {
   reload();
 });
 
+document.getElementById('btn-heal')?.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  useNearestHealStation();
+});
+
+document.getElementById('btn-heal')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  useNearestHealStation();
+});
+
 document.getElementById('btn-build').addEventListener('touchstart', (e) => {
   e.preventDefault();
   const mats = ['wood', 'stone', 'metal'];
