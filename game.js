@@ -1531,11 +1531,12 @@ function createBot(x, z, index) {
   group.position.set(x, y, z);
   scene.add(group);
 
+  const isBoss = (index === BOT_COUNT - 1);
   return {
     mesh: group,
-    name: BOT_NAMES[index % BOT_NAMES.length],
-    health: 100,
-    shield: 0,
+    name: isBoss ? 'Klan Lideri' : BOT_NAMES[index % BOT_NAMES.length],
+    health: isBoss ? 300 : 100,
+    shield: isBoss ? 100 : 0,
     alive: true,
     target: null,
     state: 'wander',
@@ -1543,7 +1544,9 @@ function createBot(x, z, index) {
     moveDir: new THREE.Vector3(),
     fireCooldown: 0,
     buildCooldown: 0,
-    weapon: Math.random() > 0.5 ? 'ar' : 'shotgun',
+    weapon: isBoss ? 'ar' : (Math.random() > 0.5 ? 'ar' : 'shotgun'),
+    isBoss,
+    prevHealth: isBoss ? 300 : 100,
   };
 }
 
@@ -1685,9 +1688,18 @@ function shoot(from, direction, damage, owner, spread = 0) {
 }
 
 function getBotAimDirection(bot, targetPosition, baseSpread = 0.05) {
-  const dir = targetPosition.clone().sub(bot.mesh.position).normalize();
   const dist = bot.mesh.position.distanceTo(targetPosition);
-  const spread = baseSpread + Math.min(dist * 0.008, 0.2);
+  let spread = baseSpread + Math.min(dist * 0.008, 0.2);
+  let aimTarget = targetPosition.clone();
+
+  // Boss bots predict player movement and are more accurate
+  if (bot && bot.isBoss) {
+    const lead = state.velocity.clone().multiplyScalar(0.12 * (dist / 20));
+    aimTarget.add(lead);
+    spread = Math.max(0.01, baseSpread * 0.35);
+  }
+
+  const dir = aimTarget.clone().sub(bot.mesh.position).normalize();
   dir.x += (Math.random() - 0.5) * spread;
   dir.y += (Math.random() - 0.5) * spread;
   dir.z += (Math.random() - 0.5) * spread;
@@ -1885,6 +1897,18 @@ function updateBots(dt) {
     bot.fireCooldown -= dt;
     bot.buildCooldown -= dt;
 
+    // Detect recent damage and attempt a quick dodge (especially for bosses)
+    if (bot.prevHealth === undefined) bot.prevHealth = bot.health;
+    if (bot.health < bot.prevHealth) {
+      const reactDir = player.position.clone().sub(bot.mesh.position).normalize();
+      const dodge = new THREE.Vector3(-reactDir.z, 0, reactDir.x).multiplyScalar(2 + Math.random() * 2);
+      bot.mesh.position.add(dodge);
+      clampBotToGround(bot);
+      resolveHorizontalCollision(bot.mesh.position);
+      bot.stateTimer = 0.6;
+      bot.prevHealth = bot.health;
+    }
+
     const distToPlayer = bot.mesh.position.distanceTo(player.position);
     const inStorm = isInStorm(bot.mesh.position);
 
@@ -1902,7 +1926,11 @@ function updateBots(dt) {
 
     // Detect player
     if (distToPlayer < 40 && !inStorm) {
-      if (bot.buildCooldown <= 0 && bot.state !== 'build') {
+      // Bosses aggressively focus the player
+      if (bot.isBoss) {
+        bot.state = 'attack';
+        bot.target = 'player';
+      } else if (bot.buildCooldown <= 0 && bot.state !== 'build') {
         bot.state = 'build';
         bot.target = 'player';
         bot.stateTimer = 1.5 + Math.random() * 0.8;
@@ -1924,10 +1952,11 @@ function updateBots(dt) {
       if (bot.stateTimer <= 0) {
         botPlaceCover(bot, player.position);
       }
-    } else if (bot.state === 'attack' && bot.target === 'player') {
+    if (bot.state === 'attack' && bot.target === 'player') {
       crosshairActive = true;
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
-      bot.mesh.position.add(dir.multiplyScalar(4 * dt));
+      const moveSpeed = bot.isBoss ? 5.5 : 4;
+      bot.mesh.position.add(dir.multiplyScalar(moveSpeed * dt));
       clampBotToGround(bot);
       resolveHorizontalCollision(bot.mesh.position);
       bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
@@ -1937,12 +1966,14 @@ function updateBots(dt) {
         from.y += 1.4;
         const targetPos = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
         const w = WEAPONS[bot.weapon === 'ar' ? 'ar' : 'shotgun'];
-        const shootDir = getBotAimDirection(bot, targetPos, w.spread);
-        bot.fireCooldown = w.fireRate;
+        const baseSpread = bot.isBoss ? Math.max(0.01, w.spread * 0.4) : w.spread;
+        const shootDir = getBotAimDirection(bot, targetPos, baseSpread);
+        bot.fireCooldown = w.fireRate * (bot.isBoss ? 0.9 : 1);
         bot.stateTimer = 0.2;
         const pellets = w.pellets || 1;
+        const damageMul = bot.isBoss ? 1.0 : 0.6;
         for (let i = 0; i < pellets; i++) {
-          shoot(from, shootDir, w.damage * 0.6, bot.name, w.spread);
+          shoot(from, shootDir, w.damage * damageMul, bot.name, baseSpread);
         }
       }
 
