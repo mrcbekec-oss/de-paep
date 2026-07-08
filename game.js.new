@@ -1,0 +1,117 @@
+import * as THREE from './node_modules/three/build/three.module.js';
+
+const state = {
+  playing: false,
+};
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 40, 180);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+document.body.appendChild(renderer.domElement);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+dirLight.position.set(20, 30, 10);
+scene.add(dirLight);
+
+const ground = new THREE.Mesh(
+  new THREE.BoxGeometry(120, 1, 120),
+  new THREE.MeshLambertMaterial({ color: 0x4a8f3f })
+);
+ground.position.y = -0.5;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const cube = new THREE.Mesh(
+  new THREE.BoxGeometry(2, 2, 2),
+  new THREE.MeshStandardMaterial({ color: 0xffb347 })
+);
+cube.position.set(0, 1.5, 0);
+scene.add(cube);
+
+camera.position.set(0, 4.5, 10);
+camera.lookAt(0, 1.5, 0);
+
+function showMenu() {
+  document.getElementById('loading')?.classList.add('hidden');
+  document.getElementById('menu')?.classList.remove('hidden');
+  document.getElementById('hud')?.classList.add('hidden');
+  document.body.classList.remove('playing');
+}
+
+function startGame() {
+  state.playing = true;
+  document.getElementById('menu')?.classList.add('hidden');
+  document.getElementById('hud')?.classList.remove('hidden');
+  document.body.classList.add('playing');
+}
+
+function initUI() {
+  const playBtn = document.getElementById('play-btn');
+  if (playBtn) playBtn.addEventListener('click', startGame);
+
+  const restartBtn = document.getElementById('restart-btn');
+  if (restartBtn) restartBtn.addEventListener('click', showMenu);
+
+  const storeBtn = document.getElementById('store-btn');
+  if (storeBtn) {
+    storeBtn.addEventListener('click', () => {
+      document.getElementById('menu')?.classList.add('hidden');
+      document.getElementById('store')?.classList.remove('hidden');
+    });
+  }
+
+  const storeBackBtn = document.getElementById('store-back-btn');
+  if (storeBackBtn) {
+    storeBackBtn.addEventListener('click', () => {
+      document.getElementById('store')?.classList.add('hidden');
+      document.getElementById('menu')?.classList.remove('hidden');
+    });
+  }
+
+  const costumesBtn = document.getElementById('costumes-btn');
+  if (costumesBtn) {
+    costumesBtn.addEventListener('click', () => {
+      document.getElementById('menu')?.classList.add('hidden');
+      document.getElementById('costumes')?.classList.remove('hidden');
+    });
+  }
+
+  const costumesBackBtn = document.getElementById('costumes-back-btn');
+  if (costumesBackBtn) {
+    costumesBackBtn.addEventListener('click', () => {
+      document.getElementById('costumes')?.classList.add('hidden');
+      document.getElementById('menu')?.classList.remove('hidden');
+    });
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  cube.rotation.y += 0.01;
+  cube.rotation.x += 0.005;
+  renderer.render(scene, camera);
+}
+
+function init() {
+  initUI();
+  window.setTimeout(() => {
+    showMenu();
+    animate();
+  }, 900);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+init();
