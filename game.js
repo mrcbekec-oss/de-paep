@@ -41,6 +41,11 @@ const COSTUME_PRICES = {
   deadpool2: 2500,
   'Ch20_nonPBR.fbx': 2450,
 };
+const PROFILE_STORAGE_KEY = 'denite-profile';
+const REWARD_STORAGE_KEY = 'denite-profile-rewards';
+const WALLET_STORAGE_KEY = 'denite-wallets';
+const COSTUME_STORAGE_KEY = 'denite-costumes';
+const REWARD_ID = '1234512345';
 
 // ─── Game State ────────────────────────────────────────────────
 const state = {
@@ -54,6 +59,8 @@ const state = {
   activeMat: 'wood',
   hotbarSlot: 0,
   dpapel: 0,
+  playerName: '',
+  playerId: '',
   ownedCostumes: ['soldier'],
   weapon: 'ar',
   ammo: { ar: { current: 30, reserve: 90 }, shotgun: { current: 6, reserve: 18 } },
@@ -124,7 +131,6 @@ const colliders = [];
 const buildings = [];
 const lootItems = [];
 const chests = [];
-const healStations = [];
 const bots = [];
 const bullets = [];
 const particles = [];
@@ -138,7 +144,6 @@ player.name = 'Player';
 player.userData.isPlayer = true;
 player.visible = false;
 scene.add(player);
-
 
 function setupProceduralPlayerFallback() {
   player.clear();
@@ -170,31 +175,48 @@ function setupProceduralWeaponFallback() {
   }
 
   const handBone = player.userData.mixamoArmBones?.RightHand || player.userData.mixamoArmBones?.RightForeArm;
-
-  // Create a procedural sword (a simple box with a guard)
-  const swordGeo = new THREE.BoxGeometry(0.08, 0.9, 0.03);
-  const swordMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-  const swordMesh = new THREE.Mesh(swordGeo, swordMat);
-  swordMesh.castShadow = true;
-
-  // Guard
-  const guardGeo = new THREE.BoxGeometry(0.24, 0.05, 0.05);
-  const guardMat = new THREE.MeshLambertMaterial({ color: 0xaa8800 });
-  const guardMesh = new THREE.Mesh(guardGeo, guardMat);
-  guardMesh.position.y = -0.3;
-  swordMesh.add(guardMesh);
-
   const weaponGroup = new THREE.Group();
-  weaponGroup.add(swordMesh);
   weaponGroup.name = 'Weapon';
+  weaponGroup.scale.setScalar(0.55);
+
+  if (state.hotbarSlot >= 2) {
+    player.userData.handWeapon = null;
+    return;
+  }
+
+  const isShotgun = state.hotbarSlot === 1;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(isShotgun ? 0.16 : 0.2, isShotgun ? 0.16 : 0.14, isShotgun ? 0.8 : 0.62),
+    new THREE.MeshLambertMaterial({ color: isShotgun ? 0x5a3324 : 0x252a31 })
+  );
+  body.castShadow = true;
+  body.position.z = -0.18;
+  weaponGroup.add(body);
+
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(isShotgun ? 0.045 : 0.035, isShotgun ? 0.055 : 0.04, isShotgun ? 0.62 : 0.48, 8),
+    new THREE.MeshLambertMaterial({ color: 0x17191d })
+  );
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = isShotgun ? -0.72 : -0.7;
+  barrel.castShadow = true;
+  weaponGroup.add(barrel);
+
+  const grip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.1, 0.25, 0.12),
+    new THREE.MeshLambertMaterial({ color: 0x191919 })
+  );
+  grip.position.set(0, -0.16, 0.04);
+  grip.rotation.x = -0.2;
+  weaponGroup.add(grip);
 
   if (handBone) {
     handBone.add(weaponGroup);
-    weaponGroup.position.set(0.05, -0.05, -0.1);
+    weaponGroup.position.set(0.04, -0.04, -0.08);
     weaponGroup.rotation.set(-Math.PI / 2, 0, 0);
   } else {
     player.add(weaponGroup);
-    weaponGroup.position.set(0.3, 0.9, -0.4);
+    weaponGroup.position.set(0.2, 0.75, -0.28);
     weaponGroup.rotation.set(-Math.PI / 4, 0, 0);
   }
 
@@ -419,47 +441,11 @@ function setupMixamoArmBones(root) {
 }
 
 function loadRightHandWeapon() {
-  // If weapon is already present, remove it first
-  if (player.userData.handWeapon) {
-    if (player.userData.handWeapon.parent) {
-      player.userData.handWeapon.parent.remove(player.userData.handWeapon);
-    }
-    player.userData.handWeapon = null;
-  }
+  setupProceduralWeaponFallback();
+}
 
-  const loader = new FBXLoader();
-  const weaponPath = './Sword%20Fight%20One.fbx';
-  loader.load(weaponPath, (fbx) => {
-    fbx.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-
-    const weaponGroup = new THREE.Group();
-    weaponGroup.add(fbx);
-    weaponGroup.name = 'Weapon';
-    weaponGroup.scale.setScalar(0.7);
-    weaponGroup.position.set(0, 0, 0);
-    weaponGroup.rotation.set(0, 0, 0);
-
-    const handBone = player.userData.mixamoArmBones?.RightHand || player.userData.mixamoArmBones?.RightForeArm;
-    if (handBone) {
-      handBone.add(weaponGroup);
-      weaponGroup.position.set(0.05, -0.05, -0.1);
-      weaponGroup.rotation.set(-Math.PI / 2, 0, 0);
-      player.userData.handWeapon = weaponGroup;
-      console.info('Sword attached to hand bone:', handBone.name);
-    } else {
-      scene.add(weaponGroup);
-      player.userData.handWeapon = weaponGroup;
-      console.warn('RightHand bone not found; sword attached to scene root.');
-    }
-  }, undefined, (error) => {
-    console.error('Failed to load weapon FBX model. Falling back to procedural weapon.', error);
-    setupProceduralWeaponFallback();
-  });
+function updateHeldWeapon() {
+  setupProceduralWeaponFallback();
 }
 
 function updateMixamoWalkArms(moveAmount, walkPhase) {
@@ -593,6 +579,9 @@ function updatePlayerProceduralMotion(dt, moveAmount, sprinting) {
   }
 
   updateMixamoWalkArms(moveAmount, walkPhase);
+
+  const playerModel = player.userData.model || player;
+  animateHumanWalk(playerModel, moveAmount > 0.05 ? 1 : 0.2, playerData.proceduralTime || 0);
 }
 
 function createTerrain() {
@@ -656,8 +645,18 @@ function getGroundHeight(x, z) {
   return height + GROUND_SKIN;
 }
 
+function getPlayerGroundY(x, z) {
+  const groundY = getGroundHeight(x, z);
+  const model = player.userData.model;
+  if (!model) return groundY;
+
+  const modelBounds = new THREE.Box3().setFromObject(model);
+  const footOffset = player.position.y - modelBounds.min.y;
+  return groundY + footOffset;
+}
+
 function clampPlayerToGround() {
-  const groundY = getGroundHeight(player.position.x, player.position.z);
+  const groundY = getPlayerGroundY(player.position.x, player.position.z);
   if (player.position.y < groundY) {
     player.position.y = groundY;
     state.velocity.y = 0;
@@ -1031,6 +1030,7 @@ function applyCostume(key) {
   const costume = COSTUMES[key];
   if (!costume) return;
   currentCostume = key;
+  persistCostumeSelection(key);
 
   if (costume.isFBX) {
     loadCustomFBXModel(costume.modelPath, costume.enableArmSwing);
@@ -1056,12 +1056,55 @@ function updateStoreSelection(key) {
 }
 
 function animateHumanWalk(human, speed, time) {
-  if (!human.userData.leftLeg) return;
-  const swing = Math.sin(time * 10) * 0.4 * Math.min(speed / 4, 1);
-  human.userData.leftLeg.rotation.x = swing;
-  human.userData.rightLeg.rotation.x = -swing;
-  human.userData.leftArm.rotation.x = -swing * 0.6;
-  human.userData.rightArm.rotation.x = swing * 0.6;
+  if (!human || !human.userData) return;
+
+  const cached = human.userData.walkBasePose || {};
+  const getBone = (key, matcher) => {
+    if (human.userData[key]) return human.userData[key];
+    let found = null;
+    human.traverse((child) => {
+      if (found || !child || (!child.isBone && !child.isMesh)) return;
+      const name = (child.name || '').toLowerCase();
+      if (matcher(name)) {
+        found = child;
+      }
+    });
+    return found;
+  };
+
+  const leftLeg = getBone('leftLeg', n => /left.*(leg|thigh|calf|knee|shin|foot)/.test(n) || n.includes('leftleg'));
+  const rightLeg = getBone('rightLeg', n => /right.*(leg|thigh|calf|knee|shin|foot)/.test(n) || n.includes('rightleg'));
+  const leftArm = getBone('leftArm', n => /left.*(arm|upperarm|lowerarm|forearm|shoulder)/.test(n) || n.includes('leftarm'));
+  const rightArm = getBone('rightArm', n => /right.*(arm|upperarm|lowerarm|forearm|shoulder)/.test(n) || n.includes('rightarm'));
+
+  if (!leftLeg && !rightLeg && !leftArm && !rightArm) return;
+
+  if (!human.userData.walkBasePose) {
+    human.userData.walkBasePose = {};
+  }
+  if (leftLeg && !cached.leftLeg) human.userData.walkBasePose.leftLeg = leftLeg.rotation.clone();
+  if (rightLeg && !cached.rightLeg) human.userData.walkBasePose.rightLeg = rightLeg.rotation.clone();
+  if (leftArm && !cached.leftArm) human.userData.walkBasePose.leftArm = leftArm.rotation.clone();
+  if (rightArm && !cached.rightArm) human.userData.walkBasePose.rightArm = rightArm.rotation.clone();
+
+  const base = human.userData.walkBasePose || {};
+  const swing = Math.sin(time * 10) * 0.45 * Math.min(Math.max(speed, 0), 1);
+  const armDrop = -0.9;
+
+  if (leftLeg) {
+    leftLeg.rotation.x = (base.leftLeg ? base.leftLeg.x : leftLeg.rotation.x) + swing;
+  }
+  if (rightLeg) {
+    rightLeg.rotation.x = (base.rightLeg ? base.rightLeg.x : rightLeg.rotation.x) - swing;
+  }
+  if (leftArm) {
+    leftArm.rotation.x = (base.leftArm ? base.leftArm.x : leftArm.rotation.x) - swing * 0.6 + armDrop * Math.min(Math.max(speed, 0), 1);
+    leftArm.rotation.z = (base.leftArm ? base.leftArm.z : leftArm.rotation.z) + 0.45 * Math.min(Math.max(speed, 0), 1);
+  }
+  if (rightArm) {
+    rightArm.rotation.x = (base.rightArm ? base.rightArm.x : rightArm.rotation.x) + swing * 0.6 + armDrop * Math.min(Math.max(speed, 0), 1);
+    rightArm.rotation.z = (base.rightArm ? base.rightArm.z : rightArm.rotation.z) - 0.45 * Math.min(Math.max(speed, 0), 1);
+  }
 }
 
 function createTree(x, z) {
@@ -1168,17 +1211,6 @@ function generateWorld() {
       (Math.random() - 0.5) * MAP_SIZE
     );
   }
-
-  // Şifa İstasyonları — sabit konumlar
-  const healPositions = [
-    [15, 15, 'health'],
-    [-15, -15, 'health'],
-    [40, -10, 'health'],
-    [-10, 40, 'shield'],
-    [10, -40, 'shield'],
-    [-40, 10, 'shield'],
-  ];
-  healPositions.forEach(([x, z, type]) => createHealStation(x, z, type));
 }
 
 function spawnLoot(x, z) {
@@ -1284,197 +1316,6 @@ function applyChestReward(reward) {
   updateHUD();
 }
 
-// ─── Şifa İstasyonları ─────────────────────────────────────────
-const HEAL_COOLDOWN = 45;    // saniye
-const HEAL_STATION_RADIUS = 3.0;
-const HEAL_STATION_AMOUNT = 30;
-const SHIELD_STATION_AMOUNT = 30;
-
-function createHealStation(x, z, type) {
-  const isHealth = type === 'health';
-  const baseColor = isHealth ? 0x22dd55 : 0x3399ff;
-  const glowColor = isHealth ? 0x00ff66 : 0x00aaff;
-  const emissiveColor = isHealth ? 0x006622 : 0x003366;
-
-  const group = new THREE.Group();
-  const groundY = getTerrainHeight(x, z);
-  group.position.set(x, groundY, z);
-  scene.add(group);
-
-  // Zemin plakası
-  const baseGeo = new THREE.CylinderGeometry(1.4, 1.6, 0.25, 12);
-  const baseMat = new THREE.MeshLambertMaterial({ color: 0x222233 });
-  const base = new THREE.Mesh(baseGeo, baseMat);
-  base.position.y = 0.125;
-  base.castShadow = true;
-  group.add(base);
-
-  // Ana sütun
-  const pillarGeo = new THREE.CylinderGeometry(0.28, 0.32, 2.2, 10);
-  const pillarMat = new THREE.MeshLambertMaterial({
-    color: baseColor,
-    emissive: emissiveColor,
-    emissiveIntensity: 0.6
-  });
-  const pillar = new THREE.Mesh(pillarGeo, pillarMat);
-  pillar.position.y = 1.35;
-  pillar.castShadow = true;
-  group.add(pillar);
-
-  // Üst küre
-  const sphereGeo = new THREE.SphereGeometry(0.42, 14, 14);
-  const sphereMat = new THREE.MeshLambertMaterial({
-    color: glowColor,
-    emissive: glowColor,
-    emissiveIntensity: 1.0,
-    transparent: true,
-    opacity: 0.92
-  });
-  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-  sphere.position.y = 2.7;
-  group.add(sphere);
-
-  // Halo halkası
-  const ringGeo = new THREE.TorusGeometry(0.7, 0.07, 8, 28);
-  const ringMat = new THREE.MeshLambertMaterial({
-    color: glowColor,
-    emissive: glowColor,
-    emissiveIntensity: 0.9,
-    transparent: true,
-    opacity: 0.75
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.position.y = 2.7;
-  ring.rotation.x = Math.PI / 2;
-  group.add(ring);
-
-  // Sembol (H = can, S = kalkan) — küçük ince silindir
-  const symbolGeo = new THREE.BoxGeometry(0.12, 0.55, 0.12);
-  const symbolMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  const symbolV = new THREE.Mesh(symbolGeo, symbolMat);
-  symbolV.position.y = 2.7;
-  symbolV.position.z = -0.28;
-  group.add(symbolV);
-  const symbolH = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.12), symbolMat);
-  symbolH.position.y = isHealth ? 2.7 : 2.85;
-  symbolH.position.z = -0.28;
-  group.add(symbolH);
-  if (isHealth) {
-    // artı işareti için yatay çubuk
-    const symbolH2 = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.12), symbolMat);
-    symbolH2.position.y = 2.7;
-    symbolH2.position.z = -0.28;
-    group.add(symbolH2);
-  }
-
-  // Işık
-  const light = new THREE.PointLight(glowColor, 1.2, 10);
-  light.position.set(x, groundY + 3, z);
-  scene.add(light);
-
-  healStations.push({
-    group, sphere, ring, light, pillarMat, sphereMat, ringMat,
-    x, z, type,
-    cooldownTimer: 0,  // kalan bekleme süresi (sn)
-    ready: true,       // kullanıma hazır mı
-  });
-}
-
-function updateHealStations(dt) {
-  const now = Date.now();
-  for (const station of healStations) {
-    // Bekleme süresi sayacı
-    if (!station.ready) {
-      station.cooldownTimer -= dt;
-      if (station.cooldownTimer <= 0) {
-        station.ready = true;
-        station.cooldownTimer = 0;
-        // Tekrar aktif olunca parlat
-        station.sphereMat.opacity = 0.92;
-        station.pillarMat.emissiveIntensity = 0.6;
-        station.light.intensity = 1.2;
-      } else {
-        // Soluk görünüm
-        const frac = 1 - station.cooldownTimer / HEAL_COOLDOWN;
-        station.sphereMat.opacity = 0.25 + frac * 0.67;
-        station.pillarMat.emissiveIntensity = 0.08 + frac * 0.52;
-        station.light.intensity = 0.15 + frac * 1.05;
-      }
-    }
-
-    // Animasyon: küre + halka dönüşü
-    station.sphere.position.y = 2.7 + Math.sin(now * 0.0025 + station.x) * 0.18;
-    station.ring.rotation.z = now * 0.0018 + station.x;
-    station.ring.position.y = station.sphere.position.y;
-
-    // Yakınlık bildirimi
-    if (station.ready && state.playing) {
-      const dist = Math.sqrt(
-        (player.position.x - station.x) ** 2 +
-        (player.position.z - station.z) ** 2
-      );
-      if (dist < HEAL_STATION_RADIUS) {
-        showHealPrompt(station.type);
-      }
-    }
-  }
-}
-
-function useNearestHealStation() {
-  if (!state.playing) return;
-  let closest = null;
-  let closestDist = Infinity;
-  for (const s of healStations) {
-    if (!s.ready) continue;
-    const dist = Math.sqrt(
-      (player.position.x - s.x) ** 2 +
-      (player.position.z - s.z) ** 2
-    );
-    if (dist < HEAL_STATION_RADIUS && dist < closestDist) {
-      closest = s;
-      closestDist = dist;
-    }
-  }
-  if (!closest) return;
-
-  if (closest.type === 'health') {
-    const before = state.health;
-    state.health = Math.min(100, state.health + HEAL_STATION_AMOUNT);
-    const gained = Math.round(state.health - before);
-    if (gained > 0) {
-      addKillFeed(`💚 Can +${gained} (${state.health}/100)`);
-    } else {
-      addKillFeed('💚 Can zaten dolu!');
-    }
-  } else {
-    const before = state.shield;
-    state.shield = Math.min(100, state.shield + SHIELD_STATION_AMOUNT);
-    const gained = Math.round(state.shield - before);
-    if (gained > 0) {
-      addKillFeed(`🛡️ Kalkan +${gained} (${state.shield}/100)`);
-    } else {
-      addKillFeed('🛡️ Kalkan zaten dolu!');
-    }
-  }
-
-  updateHUD();
-  closest.ready = false;
-  closest.cooldownTimer = HEAL_COOLDOWN;
-}
-
-let _healPromptTimeout = null;
-function showHealPrompt(type) {
-  const el = document.getElementById('heal-prompt');
-  if (!el) return;
-  const icon = type === 'health' ? '💚' : '🛡️';
-  const text = type === 'health' ? 'Can İstasyonu' : 'Kalkan İstasyonu';
-  const key = state.isMobile ? 'Dokun' : 'E';
-  el.innerHTML = `${icon} <b>${text}</b> — [${key}] kullan`;
-  el.classList.add('visible');
-  clearTimeout(_healPromptTimeout);
-  _healPromptTimeout = setTimeout(() => el.classList.remove('visible'), 1200);
-}
-
 // ─── Storm Visual ──────────────────────────────────────────────
 let stormMesh = null;
 function createStormVisual() {
@@ -1531,12 +1372,11 @@ function createBot(x, z, index) {
   group.position.set(x, y, z);
   scene.add(group);
 
-  const isBoss = (index === BOT_COUNT - 1);
   return {
     mesh: group,
-    name: isBoss ? 'Klan Lideri' : BOT_NAMES[index % BOT_NAMES.length],
-    health: isBoss ? 300 : 100,
-    shield: isBoss ? 100 : 0,
+    name: BOT_NAMES[index % BOT_NAMES.length],
+    health: 100,
+    shield: 0,
     alive: true,
     target: null,
     state: 'wander',
@@ -1544,9 +1384,8 @@ function createBot(x, z, index) {
     moveDir: new THREE.Vector3(),
     fireCooldown: 0,
     buildCooldown: 0,
-    weapon: isBoss ? 'ar' : (Math.random() > 0.5 ? 'ar' : 'shotgun'),
-    isBoss,
-    prevHealth: isBoss ? 300 : 100,
+    weapon: Math.random() > 0.5 ? 'ar' : 'shotgun',
+    lastPos: group.position.clone(),
   };
 }
 
@@ -1688,18 +1527,9 @@ function shoot(from, direction, damage, owner, spread = 0) {
 }
 
 function getBotAimDirection(bot, targetPosition, baseSpread = 0.05) {
+  const dir = targetPosition.clone().sub(bot.mesh.position).normalize();
   const dist = bot.mesh.position.distanceTo(targetPosition);
-  let spread = baseSpread + Math.min(dist * 0.008, 0.2);
-  let aimTarget = targetPosition.clone();
-
-  // Boss bots predict player movement and are more accurate
-  if (bot && bot.isBoss) {
-    const lead = state.velocity.clone().multiplyScalar(0.12 * (dist / 20));
-    aimTarget.add(lead);
-    spread = Math.max(0.01, baseSpread * 0.35);
-  }
-
-  const dir = aimTarget.clone().sub(bot.mesh.position).normalize();
+  const spread = baseSpread + Math.min(dist * 0.008, 0.2);
   dir.x += (Math.random() - 0.5) * spread;
   dir.y += (Math.random() - 0.5) * spread;
   dir.z += (Math.random() - 0.5) * spread;
@@ -1897,18 +1727,6 @@ function updateBots(dt) {
     bot.fireCooldown -= dt;
     bot.buildCooldown -= dt;
 
-    // Detect recent damage and attempt a quick dodge (especially for bosses)
-    if (bot.prevHealth === undefined) bot.prevHealth = bot.health;
-    if (bot.health < bot.prevHealth) {
-      const reactDir = player.position.clone().sub(bot.mesh.position).normalize();
-      const dodge = new THREE.Vector3(-reactDir.z, 0, reactDir.x).multiplyScalar(2 + Math.random() * 2);
-      bot.mesh.position.add(dodge);
-      clampBotToGround(bot);
-      resolveHorizontalCollision(bot.mesh.position);
-      bot.stateTimer = 0.6;
-      bot.prevHealth = bot.health;
-    }
-
     const distToPlayer = bot.mesh.position.distanceTo(player.position);
     const inStorm = isInStorm(bot.mesh.position);
 
@@ -1926,11 +1744,7 @@ function updateBots(dt) {
 
     // Detect player
     if (distToPlayer < 40 && !inStorm) {
-      // Bosses aggressively focus the player
-      if (bot.isBoss) {
-        bot.state = 'attack';
-        bot.target = 'player';
-      } else if (bot.buildCooldown <= 0 && bot.state !== 'build') {
+      if (bot.buildCooldown <= 0 && bot.state !== 'build') {
         bot.state = 'build';
         bot.target = 'player';
         bot.stateTimer = 1.5 + Math.random() * 0.8;
@@ -1952,11 +1766,10 @@ function updateBots(dt) {
       if (bot.stateTimer <= 0) {
         botPlaceCover(bot, player.position);
       }
-    if (bot.state === 'attack' && bot.target === 'player') {
+    } else if (bot.state === 'attack' && bot.target === 'player') {
       crosshairActive = true;
       const dir = player.position.clone().sub(bot.mesh.position).normalize();
-      const moveSpeed = bot.isBoss ? 5.5 : 4;
-      bot.mesh.position.add(dir.multiplyScalar(moveSpeed * dt));
+      bot.mesh.position.add(dir.multiplyScalar(4 * dt));
       clampBotToGround(bot);
       resolveHorizontalCollision(bot.mesh.position);
       bot.mesh.lookAt(player.position.x, bot.mesh.position.y, player.position.z);
@@ -1966,14 +1779,12 @@ function updateBots(dt) {
         from.y += 1.4;
         const targetPos = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
         const w = WEAPONS[bot.weapon === 'ar' ? 'ar' : 'shotgun'];
-        const baseSpread = bot.isBoss ? Math.max(0.01, w.spread * 0.4) : w.spread;
-        const shootDir = getBotAimDirection(bot, targetPos, baseSpread);
-        bot.fireCooldown = w.fireRate * (bot.isBoss ? 0.9 : 1);
+        const shootDir = getBotAimDirection(bot, targetPos, w.spread);
+        bot.fireCooldown = w.fireRate;
         bot.stateTimer = 0.2;
         const pellets = w.pellets || 1;
-        const damageMul = bot.isBoss ? 1.0 : 0.6;
         for (let i = 0; i < pellets; i++) {
-          shoot(from, shootDir, w.damage * damageMul, bot.name, baseSpread);
+          shoot(from, shootDir, w.damage * 0.6, bot.name, w.spread);
         }
       }
 
@@ -1997,6 +1808,10 @@ function updateBots(dt) {
       clampBotToGround(bot);
       resolveHorizontalCollision(bot.mesh.position);
     }
+
+    const movement = bot.mesh.position.distanceTo(bot.lastPos || bot.mesh.position);
+    animateHumanWalk(bot.mesh, movement > 0.01 ? 1 : 0.2, performance.now() * 0.001 + bot.mesh.position.x * 0.1);
+    bot.lastPos.copy(bot.mesh.position);
 
     // Bot vs bot combat
     for (const other of bots) {
@@ -2193,7 +2008,7 @@ function updatePlayer(dt) {
     state.velocity.y -= GRAVITY * subDt;
     player.position.y += state.velocity.y * subDt;
 
-    const groundY = getGroundHeight(player.position.x, player.position.z);
+    const groundY = getPlayerGroundY(player.position.x, player.position.z);
     if (player.position.y <= groundY) {
       player.position.y = groundY;
       if (state.velocity.y < 0) state.velocity.y = 0;
@@ -2204,7 +2019,7 @@ function updatePlayer(dt) {
   }
 
   // Zemine gömülme kurtarma
-  const finalGround = getGroundHeight(player.position.x, player.position.z);
+  const finalGround = getPlayerGroundY(player.position.x, player.position.z);
   if (player.position.y < finalGround) {
     player.position.y = finalGround;
     state.velocity.y = 0;
@@ -2389,8 +2204,6 @@ async function resetGame() {
   colliders.length = 0;
   lootItems.forEach(l => { if (!l.collected) { scene.remove(l.mesh); scene.remove(l.glow); } });
   lootItems.length = 0;
-  healStations.forEach(s => { scene.remove(s.group); scene.remove(s.light); });
-  healStations.length = 0;
   bots.forEach(b => scene.remove(b.mesh));
   bots.length = 0;
 
@@ -2410,14 +2223,11 @@ async function resetGame() {
 document.addEventListener('keydown', (e) => {
   state.keys[e.key.toLowerCase()] = true;
 
-  if (e.key === '1') { state.hotbarSlot = 0; updateHUD(); }
-  if (e.key === '2') { state.hotbarSlot = 1; updateHUD(); }
+  if (e.key === '1') { state.hotbarSlot = 0; updateHeldWeapon(); updateHUD(); }
+  if (e.key === '2') { state.hotbarSlot = 1; updateHeldWeapon(); updateHUD(); }
   if (e.key === '3') { state.hotbarSlot = 2; updateHUD(); }
   if (e.key === '4') { state.hotbarSlot = 3; updateHUD(); }
-  if (e.key === 'e') {
-    startKeyboardChestHold();
-    useNearestHealStation();
-  }
+  if (e.key === 'e') startKeyboardChestHold();
   if (e.key === 'r') reload();
   if (e.key === 'q') {
     const mats = ['wood', 'stone', 'metal'];
@@ -2493,6 +2303,7 @@ function updateStoreUI() {
 
 function buyDpapelPackage(amount, price) {
   state.dpapel += amount;
+  persistWallet();
   updateStoreUI();
   showStoreMessage(`${amount.toLocaleString()} D-papel satın alındı!`);
 }
@@ -2512,9 +2323,47 @@ function purchaseCostume(costumeKey) {
 
   state.dpapel -= price;
   state.ownedCostumes.push(costumeKey);
+  persistWallet();
+  persistOwnedCostumes();
   applyCostume(costumeKey);
   updateStoreUI();
   showStoreMessage('Kostüm satın alındı!');
+}
+
+function persistOwnedCostumes() {
+  try {
+    const costumes = JSON.parse(localStorage.getItem(COSTUME_STORAGE_KEY) || '{}');
+    if (state.playerId) {
+      costumes[state.playerId] = state.ownedCostumes;
+      localStorage.setItem(COSTUME_STORAGE_KEY, JSON.stringify(costumes));
+    }
+  } catch {
+    // Keep the current costume available for this session if storage is unavailable.
+  }
+}
+
+function persistCostumeSelection(key) {
+  try {
+    const selections = JSON.parse(localStorage.getItem(`${COSTUME_STORAGE_KEY}-selected`) || '{}');
+    if (state.playerId) {
+      selections[state.playerId] = key;
+      localStorage.setItem(`${COSTUME_STORAGE_KEY}-selected`, JSON.stringify(selections));
+    }
+  } catch {
+    // Selection remains active for this session if storage is unavailable.
+  }
+}
+
+function persistWallet() {
+  try {
+    const wallets = JSON.parse(localStorage.getItem(WALLET_STORAGE_KEY) || '{}');
+    if (state.playerId) {
+      wallets[state.playerId] = state.dpapel;
+      localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(wallets));
+    }
+  } catch {
+    // Keep the session wallet available if storage is unavailable.
+  }
 }
 
 function setupStoreUI() {
@@ -2645,12 +2494,10 @@ function handleJoystickEnd(e) {
   }
 }
 
-if (joystickArea) {
-  joystickArea.addEventListener('touchstart', handleJoystickStart, { passive: false });
-  joystickArea.addEventListener('touchmove', handleJoystickMove, { passive: false });
-  joystickArea.addEventListener('touchend', handleJoystickEnd);
-  joystickArea.addEventListener('touchcancel', handleJoystickEnd);
-}
+joystickArea.addEventListener('touchstart', handleJoystickStart, { passive: false });
+joystickArea.addEventListener('touchmove', handleJoystickMove, { passive: false });
+joystickArea.addEventListener('touchend', handleJoystickEnd);
+joystickArea.addEventListener('touchcancel', handleJoystickEnd);
 
 const lookArea = document.getElementById('look-area');
 
@@ -2714,16 +2561,6 @@ document.getElementById('btn-reload').addEventListener('touchstart', (e) => {
   reload();
 });
 
-document.getElementById('btn-heal')?.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  useNearestHealStation();
-});
-
-document.getElementById('btn-heal')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  useNearestHealStation();
-});
-
 document.getElementById('btn-build').addEventListener('touchstart', (e) => {
   e.preventDefault();
   const mats = ['wood', 'stone', 'metal'];
@@ -2749,6 +2586,7 @@ document.querySelectorAll('.mob-slot').forEach(btn => {
   btn.addEventListener('touchstart', (e) => {
     e.preventDefault();
     state.hotbarSlot = parseInt(btn.dataset.slot);
+    updateHeldWeapon();
     document.querySelectorAll('.mob-slot').forEach(b => b.classList.toggle('active', b === btn));
     updateHUD();
   });
@@ -2776,7 +2614,6 @@ function gameLoop(time) {
     updateLoot();
     updateChests(dt);
     updateChestHold(dt);
-    updateHealStations(dt);
   }
 
   renderer.render(scene, camera);
@@ -2786,8 +2623,57 @@ function gameLoop(time) {
 function hideLoading() {
   const loadingEl = document.getElementById('loading');
   if (loadingEl) loadingEl.classList.add('hidden');
-  const menuEl = document.getElementById('menu');
-  if (menuEl) menuEl.classList.remove('hidden');
+  document.getElementById('menu')?.classList.add('hidden');
+  document.getElementById('profile-setup')?.classList.remove('hidden');
+}
+
+function setupProfile() {
+  const form = document.getElementById('profile-form');
+  const nameInput = document.getElementById('player-name');
+  const idInput = document.getElementById('player-id');
+  const errorEl = document.getElementById('profile-error');
+  if (!form || !nameInput || !idInput) return;
+
+  try {
+    const savedProfile = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || '{}');
+    nameInput.value = typeof savedProfile.name === 'string' ? savedProfile.name : '';
+    idInput.value = typeof savedProfile.id === 'string' ? savedProfile.id : '';
+  } catch {
+    nameInput.value = '';
+    idInput.value = '';
+  }
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = nameInput.value.trim();
+    const id = idInput.value.trim();
+    if (!name || !/^\d+$/.test(id)) {
+      if (errorEl) errorEl.textContent = 'Lütfen adını ve yalnızca rakamlardan oluşan ID’ni gir.';
+      return;
+    }
+
+    state.playerName = name;
+    state.playerId = id;
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ name, id }));
+
+    const wallets = JSON.parse(localStorage.getItem(WALLET_STORAGE_KEY) || '{}');
+    state.dpapel = Number(wallets[id]) || 0;
+    const costumeAccounts = JSON.parse(localStorage.getItem(COSTUME_STORAGE_KEY) || '{}');
+    const savedCostumes = Array.isArray(costumeAccounts[id]) ? costumeAccounts[id] : ['soldier'];
+    state.ownedCostumes = [...new Set(['soldier', ...savedCostumes])];
+    const selectedAccounts = JSON.parse(localStorage.getItem(`${COSTUME_STORAGE_KEY}-selected`) || '{}');
+    const savedSelection = selectedAccounts[id];
+    if (state.ownedCostumes.includes(savedSelection)) applyCostume(savedSelection);
+    const rewards = JSON.parse(localStorage.getItem(REWARD_STORAGE_KEY) || '[]');
+    if (id === REWARD_ID && !rewards.includes(id)) {
+      state.dpapel += 10000;
+      localStorage.setItem(REWARD_STORAGE_KEY, JSON.stringify([...rewards, id]));
+    }
+    persistWallet();
+
+    document.getElementById('profile-setup')?.classList.add('hidden');
+    document.getElementById('menu')?.classList.remove('hidden');
+  });
 }
 
 async function init() {
@@ -2805,6 +2691,7 @@ async function init() {
 
     applyCostume(currentCostume);
     setupStoreUI();
+    setupProfile();
   } catch (err) {
     console.error('Init hatası:', err);
   } finally {
